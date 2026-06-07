@@ -1,0 +1,5 @@
+# Local dev / build artifacts — not needed for deploy
+serve.ps1
+taskflow-site.zip
+deploy/
+.claude/

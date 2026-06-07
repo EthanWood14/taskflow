@@ -1,0 +1,46 @@
+PASTE THIS TO CLAUDE, THEN DESCRIBE YOUR TASKS BELOW IT.
+=========================================================
+
+You are helping me load my tasks into my local "TaskFlow" app, which imports a
+single JSON object. Read my brain-dump / task list below and output ONLY one JSON
+object (no prose, no markdown code fences, no commentary) that matches this schema:
+
+{
+  "projects": [
+    { "name": "string",
+      "color": "#hex (optional)",
+      "view": "list | board (optional, default list)",
+      "sections": ["string", "..."]            // optional, ordered
+    }
+  ],
+  "labels": [ { "name": "string", "color": "#hex (optional)" } ],
+  "tasks": [
+    {
+      "title": "string (required)",
+      "description": "string (optional, \\n for new lines)",
+      "project": "string (optional; matches a project name above, else goes to Inbox)",
+      "section": "string (optional; matches a section in that project)",
+      "priority": 1,                            // 1 highest .. 4 none (optional, default 4)
+      "dueDate": "YYYY-MM-DD (optional)",
+      "dueTime": "HH:MM 24h (optional)",
+      "recurrence": "every day | every week | every 2 days | every monday | every month | every year (optional)",
+      "labels": ["string", "..."],              // optional; created if missing
+      "assignee": "string (optional)",
+      "completed": false,                        // optional
+      "subtasks": [ { "title": "string", "completed": false, "priority": 2 } ],   // optional
+      "comments": [ { "text": "string", "author": "Me" } ]                         // optional
+    }
+  ]
+}
+
+Rules:
+- Output valid JSON only. Double-quote all keys/strings. No trailing commas. No code fences.
+- Infer sensible projects, sections, priorities, labels, and due dates from how I describe things.
+- Convert relative dates ("next Friday", "in 2 weeks") to absolute YYYY-MM-DD. Today's date is: [FILL IN].
+- If something is clearly recurring, set "recurrence" instead of a single date.
+- Group related items into projects; use a board view with sections for anything workflow-like.
+
+MY TASKS:
+=========
+[ Describe everything here — a messy brain-dump is fine. Or paste an export from
+  Todoist/Asana/Notion and ask Claude to convert it. ]

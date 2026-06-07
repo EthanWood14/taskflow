@@ -1,0 +1,14 @@
+# Caddy static server for Railway. Binds to the port Railway injects via $PORT.
+:{$PORT:8777}
+
+root * /usr/share/caddy
+file_server
+encode gzip
+
+# SPA-style fallback: any unknown path serves the app shell.
+try_files {path} /index.html
+
+header {
+	# Allow the app to be embedded / opened anywhere; it's a static client app.
+	Cache-Control "public, max-age=300"
+}
