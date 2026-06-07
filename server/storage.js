@@ -62,8 +62,10 @@ export class JsonStore {
   }
   async listMembers(wsId) {
     const w = this.db.workspaces[wsId]; if (!w) return [];
-    return Object.entries(w.members).map(([uid, role]) => { const u = Object.values(this.db.users).find(x => x.id === uid); return { email: u ? u.email : '?', role }; });
+    return Object.entries(w.members).map(([uid, role]) => { const u = Object.values(this.db.users).find(x => x.id === uid); return { userId: uid, email: u ? u.email : '?', role }; });
   }
+  async removeMember(wsId, userId) { const w = this.db.workspaces[wsId]; if (!w) return false; if (w.members[userId] === 'owner') return false; delete w.members[userId]; this._save(); return true; }
+  async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
 }
 
 // Convert the v1 (per-user state) db shape into the v2 (workspaces) shape.
@@ -130,8 +132,18 @@ export class PgStore {
     return w.rows[0] ? { id: wsId, name: w.rows[0].name, role: 'member', members: Number(mc.rows[0].count) } : null;
   }
   async listMembers(wsId) {
-    const r = await this.pool.query('SELECT u.email, m.role FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1', [wsId]);
+    const r = await this.pool.query('SELECT u.id AS "userId", u.email, m.role FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.workspace_id=$1', [wsId]);
     return r.rows;
+  }
+  async removeMember(wsId, userId) {
+    const r = await this.pool.query('SELECT role FROM memberships WHERE workspace_id=$1 AND user_id=$2', [wsId, userId]);
+    if (!r.rows[0] || r.rows[0].role === 'owner') return false;
+    await this.pool.query('DELETE FROM memberships WHERE workspace_id=$1 AND user_id=$2', [wsId, userId]); return true;
+  }
+  async deleteWorkspace(wsId) {
+    await this.pool.query('DELETE FROM memberships WHERE workspace_id=$1', [wsId]);
+    await this.pool.query('DELETE FROM invites WHERE workspace_id=$1', [wsId]);
+    await this.pool.query('DELETE FROM workspaces WHERE id=$1', [wsId]); return true;
   }
 }
 

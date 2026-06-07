@@ -78,7 +78,29 @@ app.post('/api/workspaces/:id/invite', asyncH(async (req, res) => {
 app.get('/api/workspaces/:id/members', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
   if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
-  res.json({ members: await store.listMembers(req.params.id) });
+  res.json({ members: await store.listMembers(req.params.id), online: presenceList(req.params.id) });
+}));
+
+app.post('/api/workspaces/:id/members/remove', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if ((await store.role(u.uid, req.params.id)) !== 'owner') return res.status(403).json({ error: 'Only the owner can remove members' });
+  const ok = await store.removeMember(req.params.id, String(req.body.userId || ''));
+  if (!ok) return res.status(400).json({ error: "Can't remove that member" });
+  broadcast(req.params.id, null, -1); kickUser(req.params.id, req.body.userId); res.json({ ok: true });
+}));
+
+app.post('/api/workspaces/:id/leave', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const role = await store.role(u.uid, req.params.id);
+  if (!role) return res.status(400).json({ error: 'Not a member' });
+  if (role === 'owner') return res.status(400).json({ error: "Owners can't leave — delete the workspace instead" });
+  await store.removeMember(req.params.id, u.uid); kickUser(req.params.id, u.uid); res.json({ ok: true });
+}));
+
+app.post('/api/workspaces/:id/delete', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if ((await store.role(u.uid, req.params.id)) !== 'owner') return res.status(403).json({ error: 'Only the owner can delete this workspace' });
+  await store.deleteWorkspace(req.params.id); broadcast(req.params.id, null, -1); closeRoom(req.params.id); res.json({ ok: true });
 }));
 
 app.post('/api/join', asyncH(async (req, res) => {
@@ -95,11 +117,15 @@ app.get('*', (req, res) => { if (req.path.startsWith('/api/')) return res.status
 // realtime
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
-const rooms = new Map(); // workspaceId -> Set<{ws,clientId}>
+const rooms = new Map(); // workspaceId -> Set<{ws,clientId,uid,email}>
 function broadcast(wsId, fromClientId, rev) {
   const set = rooms.get(wsId); if (!set) return;
   for (const c of set) { if (c.clientId && c.clientId === fromClientId) continue; try { c.ws.send(JSON.stringify({ type: 'update', rev })); } catch (e) {} }
 }
+function presenceList(wsId) { const set = rooms.get(wsId); if (!set) return []; return [...new Set([...set].map(c => c.email).filter(Boolean))]; }
+function broadcastPresence(wsId) { const set = rooms.get(wsId); if (!set) return; const online = presenceList(wsId); const msg = JSON.stringify({ type: 'presence', online }); for (const c of set) { try { c.ws.send(msg); } catch (e) {} } }
+function kickUser(wsId, userId) { const set = rooms.get(wsId); if (!set) return; for (const c of [...set]) { if (c.uid === userId) { try { c.ws.send(JSON.stringify({ type: 'removed' })); c.ws.close(); } catch (e) {} } } }
+function closeRoom(wsId) { const set = rooms.get(wsId); if (!set) return; for (const c of [...set]) { try { c.ws.send(JSON.stringify({ type: 'removed' })); c.ws.close(); } catch (e) {} } rooms.delete(wsId); }
 wss.on('connection', async (ws, req) => {
   try {
     const u = new URL(req.url, 'http://x');
@@ -109,10 +135,11 @@ wss.on('connection', async (ws, req) => {
     const p = jwt.verify(token, JWT_SECRET);
     if (!wsId || !(await store.role(p.uid, wsId))) { ws.close(); return; }
     if (!rooms.has(wsId)) rooms.set(wsId, new Set());
-    const entry = { ws, clientId };
+    const entry = { ws, clientId, uid: p.uid, email: p.email };
     rooms.get(wsId).add(entry);
-    ws.on('close', () => { const s = rooms.get(wsId); if (s) { s.delete(entry); if (!s.size) rooms.delete(wsId); } });
+    ws.on('close', () => { const s = rooms.get(wsId); if (s) { s.delete(entry); if (!s.size) rooms.delete(wsId); else broadcastPresence(wsId); } });
     ws.send(JSON.stringify({ type: 'connected', workspace: wsId }));
+    broadcastPresence(wsId);
   } catch (e) { try { ws.close(); } catch (_) {} }
 });
 

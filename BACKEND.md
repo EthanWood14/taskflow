@@ -64,6 +64,11 @@ cd server && npm install && PUBLIC_DIR=.. DATA_DIR=./data node server.js
 | GET    | `/api/workspaces/:id/state`       | yes  | —                      | `{state,rev}`                   |
 | PUT    | `/api/workspaces/:id/state`       | yes  | `{state,clientId}`     | `{ok,rev}`                      |
 | POST   | `/api/workspaces/:id/invite`      | yes  | —                      | `{code}`                        |
-| GET    | `/api/workspaces/:id/members`     | yes  | —                      | `{members:[{email,role}]}`      |
+| GET    | `/api/workspaces/:id/members`     | yes  | —                      | `{members:[{userId,email,role}],online}` |
+| POST   | `/api/workspaces/:id/members/remove` | owner | `{userId}`          | `{ok}`                          |
+| POST   | `/api/workspaces/:id/leave`       | member | —                     | `{ok}`                          |
+| POST   | `/api/workspaces/:id/delete`      | owner | —                      | `{ok}`                          |
 | POST   | `/api/join`                       | yes  | `{code}`               | `{workspace}`                   |
-| WS     | `/ws?token=&workspace=&clientId=` | yes  | —                      | `{type:'update',rev}`           |
+| WS     | `/ws?token=&workspace=&clientId=` | yes  | —                      | `{type:'update'\|'presence'\|'removed', …}` |
+
+**Member management & presence:** owners can remove members or delete the workspace; members can leave. The roster (Settings → ☁ Cloud sync → Members) shows roles and a live green dot for who's online; the topbar shows a presence pill of online avatars. Presence is pushed over the workspace WebSocket as people connect/disconnect.
