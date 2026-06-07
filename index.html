@@ -604,6 +604,57 @@
   .wr-winlist { margin-top:14px; display:flex; flex-direction:column; gap:4px; }
   .wr-win { color:var(--text-dim); font-size:13px; }
 
+  /* ===== Status / type / mentions ===== */
+  .status-chip { font-size:11px; padding:1px 8px; border:1px solid; border-radius:10px; display:inline-flex; align-items:center; gap:3px; }
+  .mention { color:var(--accent); background:var(--accent-soft); padding:0 4px; border-radius:5px; font-weight:600; }
+
+  /* ===== Timeline / Gantt ===== */
+  .tl-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
+  .tl-head { display:flex; position:sticky; top:0; background:var(--bg-alt); border-bottom:1px solid var(--border); }
+  .tl-day { flex-shrink:0; text-align:center; font-size:11px; color:var(--text-dim); padding:6px 0; border-right:1px solid var(--border); }
+  .tl-day.tl-today { background:var(--accent-soft); color:var(--accent); font-weight:700; }
+  .tl-row { display:flex; border-bottom:1px solid var(--border); min-height:38px; align-items:center; }
+  .tl-label { width:180px; min-width:180px; padding:0 12px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border-right:1px solid var(--border); position:sticky; left:0; background:var(--bg); }
+  .tl-track { position:relative; height:38px; flex-shrink:0; }
+  .tl-bar { position:absolute; top:7px; height:24px; border-radius:7px; color:#fff; font-size:11px; line-height:24px; padding:0 8px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; box-shadow:var(--shadow-sm); }
+  .tl-bar:hover { filter:brightness(1.08); }
+
+  /* ===== Reports ===== */
+  .rep-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+  .rep-row:last-child { border-bottom:none; }
+
+  /* ===== Goals ===== */
+  .goal-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+  .goal-card { border:1px solid var(--border); border-radius:14px; padding:16px; background:var(--bg-alt); }
+  .goal-head { display:flex; align-items:center; justify-content:space-between; }
+  .goal-scope { font-size:12px; color:var(--text-dim); margin-bottom:10px; }
+  .goal-bar { height:10px; background:var(--hover); border-radius:6px; overflow:hidden; }
+  .goal-fill { height:100%; background:var(--brand-grad); transition:width .4s; }
+  .goal-fill.done { background:linear-gradient(135deg,var(--green),#34d399); }
+  .goal-meta { font-size:12px; color:var(--text-dim); margin-top:7px; }
+
+  /* ===== Activity ===== */
+  .act-row { display:flex; align-items:center; gap:11px; padding:9px 2px; border-bottom:1px solid var(--border); }
+  .act-ico { width:22px; text-align:center; }
+  .act-text { flex:1; font-size:13px; }
+  .act-time { font-size:11px; color:var(--text-faint); }
+
+  /* ===== Attachments ===== */
+  .att-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); }
+  .att-name { flex:1; font-size:13px; }
+  .att-size { font-size:11px; color:var(--text-faint); }
+  .att-dl { text-decoration:none; color:var(--accent); font-weight:700; }
+  .att-add { cursor:pointer; font-size:13px; }
+
+  /* ===== Lock screen ===== */
+  #lockscreen { position:fixed; inset:0; z-index:9999; background:var(--sidebar-grad); display:grid; place-items:center; }
+  .lock-box { text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:18px; padding:34px 40px; box-shadow:var(--shadow); }
+  .lock-logo { font-size:38px; }
+  .lock-title { font-weight:800; font-size:20px; margin:6px 0 16px; }
+  .lock-pin { padding:12px 16px; border:1px solid var(--border); border-radius:11px; font-size:18px; text-align:center; outline:none; background:var(--bg-alt); }
+  .lock-pin:focus { border-color:var(--accent); }
+  .lock-err { color:var(--p1); font-size:13px; height:18px; margin-top:8px; }
+
   @media (max-width: 820px) {
     .mx-grid { grid-template-columns:1fr; }
     .cal-cell { min-height:64px; }
@@ -611,6 +662,7 @@
     .bulk-bar { bottom:74px; }
     #focus-bar { right:10px; bottom:74px; }
     .wr-row { flex-direction:column; align-items:flex-start; gap:6px; }
+    .tl-label { width:120px; min-width:120px; }
   }
 </style>
 </head>
@@ -764,7 +816,7 @@ function advanceRecurrence(dateStr, rule) {
 //  STATE
 // ============================================================
 const STORE_KEY = 'taskflow.v1';
-let state = migrate(load()) || seed();
+let state = migrate(load() || seed());
 let ui = { view: 'today', projectId: null, labelName: null, filterId: null, search: '', sidebarCollapsed: false, collapsedSections: {}, drawerOpen: false, mSearch: false, selected: new Set(), calMonth: null, statRange: 14 };
 
 function persist() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
@@ -780,10 +832,24 @@ function migrate(s) {
   s.filters = s.filters || [];
   s.templates = s.templates || [];        // [{id,name,color,view,sections:[],tasks:[]}]
   s.folders = s.folders || [];            // [{id,name,order,collapsed}]
+  s.people = s.people || [];              // [{id,name,color}] for assignment/@mentions
+  s.goals = s.goals || [];                // [{id,name,target,labelId?,projectId?,createdAt}]
+  s.activityLog = s.activityLog || [];    // [{id,ts,type,taskId,text}] audit trail (capped)
+  s.automations = s.automations || [];    // [{id,name,on,projectId?,keyword?,set:{}}]
+  s.customFields = s.customFields || [];  // [{id,name,type,options?}]
+  s.settings.workspaceName = s.settings.workspaceName || 'TaskFlow';
+  if (s.settings.passcode===undefined) s.settings.passcode = null;
+  if (s.settings.sortMode===undefined) s.settings.sortMode = 'smart';
   (s.tasks||[]).forEach(t=>{
     if (t.dependsOn===undefined) t.dependsOn = [];
     if (t.timeSpent===undefined) t.timeSpent = 0;   // seconds
     if (t.estimate===undefined) t.estimate = null;  // minutes
+    if (t.status===undefined) t.status = t.completed?'done':'todo';   // todo|inprogress|inreview|blocked|done
+    if (t.deadline===undefined) t.deadline = null;  // hard deadline YYYY-MM-DD
+    if (t.milestone===undefined) t.milestone = false;
+    if (t.type===undefined) t.type = 'task';        // task|bug|feature
+    if (t.attachments===undefined) t.attachments = [];
+    if (t.custom===undefined) t.custom = {};
   });
   (s.projects||[]).forEach(p=>{ if(p.folderId===undefined) p.folderId=null; });
   return s; // accent applied during init (after THEME_PRESETS is defined)
@@ -798,7 +864,7 @@ function seed() {
   const secDone = { id: uid('sec'), projectId: pWork.id, name:'Done', order:2 };
   const lUrgent = { id: uid('lbl'), name:'urgent', color:'#dc4c3e' };
   const lHome = { id: uid('lbl'), name:'home', color:'#7ecc49' };
-  const t = (o) => Object.assign({ id:uid('task'), projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0, estimate:null }, o);
+  const t = (o) => Object.assign({ id:uid('task'), projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0, estimate:null, status:'todo', deadline:null, milestone:false, type:'task', attachments:[], custom:{} }, o);
   const tasks = [
     t({ title:'Welcome to TaskFlow 👋 — click me to see details', description:'This is a full task detail view. You can edit everything here: description, priority, due date, labels, subtasks, and comments.', projectId:'inbox', priority:1, dueDate: todayStr(), order:0 }),
     t({ title:'Try the natural-language Quick Add', description:'Press "q" or click + Add task. Type: "Email Sam tomorrow at 9am p1 @urgent"', projectId:'inbox', priority:2, dueDate: todayStr(), order:1, labels:[lUrgent.id] }),
@@ -821,6 +887,11 @@ function seed() {
     achievements: {},
     templates: [],
     folders: [],
+    people: [],
+    goals: [],
+    activityLog: [],
+    automations: [],
+    customFields: [],
   };
 }
 
@@ -889,7 +960,7 @@ function renderSidebar() {
   const secCol = (key) => ui.collapsedSections[key] ? 'collapsed' : '';
   sb.innerHTML = `
     <div class="sb-header">
-      <div class="logo"><span class="dot">✓</span>TaskFlow</div>
+      <div class="logo"><span class="dot">✓</span>${esc(state.settings.workspaceName||'TaskFlow')}</div>
       <div class="spacer"></div>
       <button class="icon-btn" data-act="command-palette" title="Command palette (Ctrl/⌘K)">⌘</button>
       <button class="icon-btn" data-act="open-settings" title="Settings">⚙</button>
@@ -911,8 +982,14 @@ function renderSidebar() {
       <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
       <div class="nav-item ${navActive('stats')}" data-view="stats"><span class="ico">📊</span><span class="label">Stats</span></div>
       <div class="nav-item ${navActive('achievements')}" data-view="achievements"><span class="ico">🏅</span><span class="label">Achievements</span>${achUnlockedCount()?`<span class="count">${achUnlockedCount()}/${ACHIEVEMENTS.length}</span>`:''}</div>
+      <div class="nav-item ${navActive('timeline')}" data-view="timeline"><span class="ico">📐</span><span class="label">Timeline</span></div>
+      <div class="nav-item ${navActive('backlog')}" data-view="backlog"><span class="ico">🗃️</span><span class="label">Backlog</span></div>
+      <div class="nav-item ${navActive('goals')}" data-view="goals"><span class="ico">🎯</span><span class="label">Goals</span>${(state.goals||[]).length?`<span class="count">${state.goals.length}</span>`:''}</div>
+      <div class="nav-item ${navActive('reports')}" data-view="reports"><span class="ico">📈</span><span class="label">Reports</span></div>
+      <div class="nav-item ${navActive('activity')}" data-view="activity"><span class="ico">📜</span><span class="label">Activity</span></div>
       <div class="nav-item" data-act="weekly-review"><span class="ico">🔄</span><span class="label">Weekly Review</span></div>
       <div class="nav-item" data-act="open-templates"><span class="ico">📋</span><span class="label">Templates</span>${(state.templates||[]).length?`<span class="count">${state.templates.length}</span>`:''}</div>
+      <div class="nav-item" data-act="bulk-add"><span class="ico">➕</span><span class="label">Bulk add</span></div>
 
       <div class="sb-section-head">
         <span class="caret ${secCol('projects')}" data-caret="projects">▾</span>
@@ -957,6 +1034,8 @@ function taskMetaHtml(t) {
   } else if (t.recurrence) {
     bits.push(`<span class="meta-chip">⟳ ${esc(t.recurrence)}</span>`);
   }
+  if (!t.completed && t.status && t.status!=='todo' && t.status!=='done') bits.push(statusChipHtml(t));
+  if (t.deadline) { const od=dayDiff(t.deadline,todayStr())<0&&!t.completed; bits.push(`<span class="meta-chip ${od?'overdue':''}">⏰ ${esc(fmtDate(t.deadline))}</span>`); }
   if (!t.completed && isBlocked(t)) bits.push(`<span class="meta-chip blocked">🔒 Blocked</span>`);
   const subs = subtasks(t.id);
   if (subs.length) bits.push(`<span class="subcount">☑ ${subs.filter(s=>s.completed).length}/${subs.length}</span>`);
@@ -976,7 +1055,7 @@ function taskRowHtml(t, opts={}) {
   return `<div class="task-row ${t.completed?'completed':''} ${opts.sub?'subtask':''}" data-task="${t.id}" draggable="${opts.draggable?'true':'false'}">
     <div class="checkbox ${p<4?'p'+p:''} ${t.completed?'done':''}" data-check="${t.id}">✓</div>
     <div class="task-body">
-      <div class="task-title">${esc(t.title)}</div>
+      <div class="task-title">${t.milestone?'<span title="Milestone">★</span> ':''}${t.type==='bug'?'🐞 ':t.type==='feature'?'✨ ':''}${esc(t.title)}</div>
       ${t.description?`<div class="task-desc">${esc(t.description).split('\n')[0].slice(0,160)}</div>`:''}
       ${taskMetaHtml(t)}
     </div>
@@ -1036,7 +1115,13 @@ function clauseMatch(t, c) {
   if (c==='tomorrow') return t.dueDate===addDays(todayStr(),1);
   if (c==='this week'||c==='week') return t.dueDate && dayDiff(t.dueDate,todayStr())>=0 && dayDiff(t.dueDate,todayStr())<7;
   if (c==='recurring') return !!t.recurrence;
-  if (c==='blocked') return isBlocked(t);
+  if (c==='blocked') return isBlocked(t) || t.status==='blocked';
+  if (c==='milestone') return !!t.milestone;
+  if (c==='bug') return t.type==='bug';
+  if (c==='feature') return t.type==='feature';
+  if (c==='in progress'||c==='inprogress') return t.status==='inprogress';
+  if (c==='in review'||c==='inreview'||c==='review') return t.status==='inreview';
+  if (c==='has deadline') return !!t.deadline;
   if (c==='completed'||c==='done') return !!t.completed;
   if (c==='has estimate'||c==='estimated') return !!t.estimate;
   if (c.startsWith('@')) return t.labels.some(id=>{const l=getLabel(id);return l&&l.name.toLowerCase()===c.slice(1);});
@@ -1152,6 +1237,14 @@ function renderMain() {
   else if (v==='planner')  { body = `<div class="view-inner" style="max-width:760px">${plannerViewHtml()}</div>`; }
   else if (v==='stats')    { body = `<div class="view-inner" style="max-width:900px">${statsViewHtml()}</div>`; }
   else if (v==='achievements') { body = `<div class="view-inner">${achievementsViewHtml()}</div>`; }
+  else if (v==='timeline')  { body = `<div class="view-inner" style="max-width:1100px">${timelineViewHtml()}</div>`; }
+  else if (v==='reports')   { body = `<div class="view-inner" style="max-width:900px">${reportsViewHtml()}</div>`; }
+  else if (v==='goals')     { body = `<div class="view-inner">${goalsViewHtml()}</div>`; }
+  else if (v==='activity')  { body = `<div class="view-inner">${activityViewHtml()}</div>`; }
+  else if (v==='backlog')   {
+    const tasks = sortTasks(state.tasks.filter(t=>!t.parentId && !t.completed && !t.dueDate));
+    body = `<div class="view-inner">${`<div class="view-title-row"><div class="view-title"><span class="emoji">🗃️</span>Backlog</div></div><div class="view-sub">Unscheduled tasks — your queue of things with no date.</div>`}${groupedListHtml(tasks,{showProject:true,emptyMsg:'Backlog is clear.'})}</div>`;
+  }
   else if (v==='import') {
     body = `<div class="view-inner">${importViewHtml()}</div>`;
   }
@@ -1165,7 +1258,7 @@ function topbarHtml() {
     <button class="hamburger" data-act="open-drawer" title="Menu" aria-label="Open menu">☰</button>
     <button class="icon-btn m-search-close" data-act="close-msearch" title="Back" aria-label="Back">←</button>
     ${ui.sidebarCollapsed?`<button class="icon-btn desk-only" data-act="expand-sidebar" title="Show sidebar">»</button>`:''}
-    <div class="brand-mini"><span class="dot">✓</span>TaskFlow</div>
+    <div class="brand-mini"><span class="dot">✓</span>${esc(state.settings.workspaceName||'TaskFlow')}</div>
     <div class="crumbs"></div>
     <span class="spacer-m"></span>
     <div class="search-box">🔍<input id="search" placeholder="Search tasks…" value="${esc(ui.search)}" /></div>
@@ -1353,6 +1446,7 @@ function runImport(jsonText, replace) {
       completedAt: raw.completed?Date.now():null,
       createdAt: Date.now(),
       dependsOn: [], timeSpent: 0, estimate: (typeof raw.estimate==='number'?raw.estimate:null),
+      status: raw.completed?'done':(raw.status||'todo'), deadline: raw.deadline||null, milestone: !!raw.milestone, type: raw.type||'task', attachments: [], custom: raw.custom||{},
       order: state.tasks.filter(x=>x.projectId===(proj?proj.id:'inbox')&&!x.parentId).length,
     };
     state.tasks.push(t);
@@ -1392,8 +1486,10 @@ function toggleComplete(id) {
     t.completed = !t.completed;
     t.completedAt = t.completed?Date.now():null;
     if (t.completed) {
+      t.status='done';
       subtasks(t.id).forEach(s=>{ if(!s.completed){s.completed=true;s.completedAt=Date.now();} });
       onCompletion(t);
+      logActivity('completed', t.id, t.title);
       announceUnblocked(t.id);
       playSound('complete');
       toast('✓ Completed  ·  +'+xpFor(t)+' XP', 'Undo', ()=>{ t.completed=false; t.completedAt=null; undoCompletion(t); persist(); render(); });
@@ -1519,6 +1615,8 @@ function applyAccent(accent, preset) {
 }
 function lighten(hex, amt){ try{ let n=parseInt(hex.slice(1),16); let r=Math.min(255,(n>>16)+amt), g=Math.min(255,((n>>8)&255)+amt), b=Math.min(255,(n&255)+amt); return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0'); }catch(e){return hex;} }
 function deleteTask(id) {
+  const tk = state.tasks.find(t=>t.id===id);
+  if (tk) logActivity('deleted', '', tk.title);
   const subs = subtasks(id).map(s=>s.id);
   state.tasks = state.tasks.filter(t=>t.id!==id && !subs.includes(t.id));
   state.comments = state.comments.filter(c=>c.taskId!==id);
@@ -1551,8 +1649,9 @@ function addTaskFromParse(parsed, projId, sectionId, parentId=null) {
     if (!l){ l={id:uid('lbl'),name:n,color:LABEL_COLORS[state.labels.length%LABEL_COLORS.length]}; state.labels.push(l); }
     return l.id;
   });
-  const t = { id:uid('task'), projectId: projId||'inbox', sectionId: sectionId||null, parentId, title:parsed.title||'Untitled', description:'', priority:parsed.priority||4, dueDate:parsed.date||null, dueTime:parsed.time||null, recurrence:parsed.recurrence||null, labels:labelIds, assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order: state.tasks.length, dependsOn:[], timeSpent:0, estimate:parsed.estimate||null };
-  state.tasks.push(t); persist(); return t;
+  const t = { id:uid('task'), projectId: projId||'inbox', sectionId: sectionId||null, parentId, title:parsed.title||'Untitled', description:'', priority:parsed.priority||4, dueDate:parsed.date||null, dueTime:parsed.time||null, recurrence:parsed.recurrence||null, labels:labelIds, assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order: state.tasks.length, dependsOn:[], timeSpent:0, estimate:parsed.estimate||null, status:'todo', deadline:null, milestone:false, type:'task', attachments:[], custom:{} };
+  applyAutomations(t);
+  state.tasks.push(t); logActivity('created', t.id, t.title); persist(); return t;
 }
 
 // ============================================================
@@ -1638,7 +1737,7 @@ function openTaskDetail(id) {
   const labelOpts = state.labels.map(l=>`<span class="label-opt ${t.labels.includes(l.id)?'sel':''}" data-toglabel="${l.id}"><span class="color-swatch" style="background:${l.color};width:12px;height:12px"></span>${esc(l.name)}</span>`).join('');
   const subs = subtasks(t.id).sort((a,b)=>a.order-b.order);
   const subsHtml = subs.map(s=>`<div class="subtask-line ${s.completed?'done':''}"><div class="checkbox ${s.completed?'done':''}" data-check="${s.id}" style="width:17px;height:17px">✓</div><span style="flex:1">${esc(s.title)}</span><button class="icon-btn" data-delsub="${s.id}">✕</button></div>`).join('');
-  const comments = taskComments(t.id).map(c=>`<div class="comment"><div class="avatar">${esc((c.author||'?')[0].toUpperCase())}</div><div class="c-body"><div>${esc(c.text)}</div><div class="c-meta">${esc(c.author||'')} · ${new Date(c.createdAt).toLocaleString()}</div></div></div>`).join('');
+  const comments = taskComments(t.id).map(c=>`<div class="comment"><div class="avatar">${esc((c.author||'?')[0].toUpperCase())}</div><div class="c-body"><div>${renderMentions(c.text)}</div><div class="c-meta">${esc(c.author||'')} · ${new Date(c.createdAt).toLocaleString()}</div></div></div>`).join('');
   const projOpts = ['inbox', ...activeProjects().map(p=>p.id)].map(pid=>{const p=getProject(pid);return `<option value="${pid}" ${pid===t.projectId?'selected':''}>${esc(p.name)}</option>`;}).join('');
   const secOpts = `<option value="">No section</option>` + projectSections(t.projectId).map(s=>`<option value="${s.id}" ${s.id===t.sectionId?'selected':''}>${esc(s.name)}</option>`).join('');
 
@@ -1657,7 +1756,15 @@ function openTaskDetail(id) {
       </div>
       <div class="row2">
         <div class="field"><label>Priority</label><select id="d-pri"><option value="1" ${t.priority===1?'selected':''}>P1 — Urgent</option><option value="2" ${t.priority===2?'selected':''}>P2 — High</option><option value="3" ${t.priority===3?'selected':''}>P3 — Medium</option><option value="4" ${t.priority===4?'selected':''}>P4 — None</option></select></div>
+        <div class="field"><label>Status</label><select id="d-status">${STATUSES.map(s=>`<option value="${s.k}" ${t.status===s.k?'selected':''}>${s.icon} ${s.label}</option>`).join('')}</select></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Type</label><select id="d-type"><option value="task" ${t.type==='task'?'selected':''}>📋 Task</option><option value="bug" ${t.type==='bug'?'selected':''}>🐞 Bug</option><option value="feature" ${t.type==='feature'?'selected':''}>✨ Feature</option></select></div>
         <div class="field"><label>Recurrence</label><input type="text" id="d-rec" placeholder="e.g. every week" value="${esc(t.recurrence||'')}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Deadline (hard)</label><input type="date" id="d-deadline" value="${t.deadline||''}"></div>
+        <div class="field toggle-row" style="align-self:end"><label style="margin:0">★ Milestone</label><input type="checkbox" id="d-milestone" ${t.milestone?'checked':''}></div>
       </div>
       <div class="row2">
         <div class="field"><label>Project</label><select id="d-proj">${projOpts}</select></div>
@@ -1671,6 +1778,11 @@ function openTaskDetail(id) {
 
       <div class="detail-section-title">Dependencies ${isBlocked(t)?'<span class="blocked-tag">🔒 Blocked</span>':''}</div>
       <div class="field"><label>This task is blocked by</label>${depsPickerHtml(t)}</div>
+
+      ${customFieldsHtml(t)}
+
+      <div class="detail-section-title">Attachments</div>
+      ${attachmentsHtml(t)}
 
       <div class="detail-section-title">Time tracking</div>
       <div class="time-row">
@@ -1703,8 +1815,16 @@ function openTaskDetail(id) {
   $('#d-newcomment').addEventListener('keydown', e=>{ if(e.key==='Enter'&&e.target.value.trim()){ state.comments.push({id:uid('cm'),taskId:t.id,text:e.target.value.trim(),author:state.settings.userName,createdAt:Date.now()}); persist(); openTaskDetail(t.id); }});
   modalRoot.querySelectorAll('[data-toglabel]').forEach(el=>el.addEventListener('click',()=>{ const lid=el.dataset.toglabel; const i=t.labels.indexOf(lid); if(i>=0)t.labels.splice(i,1); else t.labels.push(lid); el.classList.toggle('sel'); persist(); }));
   modalRoot.querySelectorAll('[data-togdep]').forEach(el=>el.addEventListener('click',()=>{ const did=el.dataset.togdep; t.dependsOn=t.dependsOn||[]; const i=t.dependsOn.indexOf(did); if(i>=0)t.dependsOn.splice(i,1); else t.dependsOn.push(did); persist(); openTaskDetail(t.id); }));
+  const attInput=$('#d-attinput');
+  if (attInput) attInput.addEventListener('change', e=>{
+    const files=[...e.target.files]; let pending=files.length;
+    files.forEach(f=>{ if(f.size>3*1048576){ toast('“'+f.name+'” is over 3MB — skipped'); if(--pending===0)openTaskDetail(t.id); return; }
+      const r=new FileReader(); r.onload=()=>{ t.attachments=t.attachments||[]; t.attachments.push({name:f.name,size:f.size,dataUrl:r.result}); if(--pending===0){ persist(); openTaskDetail(t.id); } }; r.readAsDataURL(f); });
+  });
+  modalRoot.querySelectorAll('[data-delatt]').forEach(el=>el.onclick=()=>{ t.attachments.splice(+el.dataset.delatt,1); persist(); openTaskDetail(t.id); });
   setTimeout(()=>$('#d-title').focus(),30);
 }
+function renderMentions(text){ return esc(text).replace(/@([\w-]+)/g, '<span class="mention">@$1</span>'); }
 function depsPickerHtml(t) {
   const candidates = state.tasks.filter(x=>!x.parentId && x.id!==t.id && x.id!==t.parentId);
   const chosen = (t.dependsOn||[]);
@@ -1726,6 +1846,12 @@ function saveTaskDetail(id) {
   t.sectionId = $('#d-sec').value||null;
   t.assignee = $('#d-assignee').value.trim()||null;
   const est = parseInt($('#d-est').value,10); t.estimate = (est>0?est:null);
+  t.type = $('#d-type').value; t.deadline = $('#d-deadline').value||null; t.milestone = $('#d-milestone').checked;
+  const newStatus = $('#d-status').value;
+  if (newStatus!==t.status) { setStatus(id, newStatus); } else { t.status=newStatus; }
+  // custom fields
+  t.custom = t.custom||{}; modalRoot.querySelectorAll('[data-cf]').forEach(el=>{ t.custom[el.dataset.cf]=el.value; });
+  logActivity('edited', t.id, t.title);
   persist(); closeModal(); render(); toast('Saved');
 }
 
@@ -1913,6 +2039,7 @@ function wireSidebar() {
     else if(a==='open-stats') goView('stats');
     else if(a==='weekly-review'){ ui.drawerOpen=false; openWeeklyReview(); }
     else if(a==='open-templates'){ ui.drawerOpen=false; openTemplatePicker(); }
+    else if(a==='bulk-add'){ ui.drawerOpen=false; openBulkAdd(); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
   });
@@ -1958,7 +2085,17 @@ function wireMain() {
     else if(a==='open-settings') openSettings();
     else if(a==='open-stats') goView('stats');
     else if(a==='plan-my-day') planMyDay();
+    else if(a==='add-goal') openGoalModal();
+    else if(a==='delete-goal'){ }
+    else if(a==='export-csv') exportCsv();
+    else if(a==='export-ics') exportIcs();
+    else if(a==='clear-activity'){ if(confirm('Clear the activity log?')){ state.activityLog=[]; persist(); render(); } }
+    else if(a==='bulk-add') openBulkAdd();
+    else if(a==='weekly-review') openWeeklyReview();
+    else if(a==='open-templates') openTemplatePicker();
   });
+  m.querySelectorAll('[data-delgoal]').forEach(el=>el.onclick=()=>{ state.goals=state.goals.filter(g=>g.id!==el.dataset.delgoal); persist(); render(); });
+  m.querySelectorAll('.tl-bar[data-task]').forEach(el=>el.onclick=()=>openTaskDetail(el.dataset.task));
 
   // ----- Calendar -----
   m.querySelectorAll('[data-cal]').forEach(el=>el.onclick=()=>{
@@ -2394,6 +2531,14 @@ function openCommandPalette() {
     {icon:'🏅', label:'Open Achievements', run:()=>goView('achievements')},
     {icon:'🍅', label:'Start Focus / Pomodoro', run:()=>openFocusPicker()},
     {icon:'✨', label:'Plan My Day (auto-schedule)', run:()=>planMyDay()},
+    {icon:'➕', label:'Bulk add tasks', run:()=>openBulkAdd()},
+    {icon:'📐', label:'Open Timeline (Gantt)', run:()=>goView('timeline')},
+    {icon:'📈', label:'Open Reports', run:()=>goView('reports')},
+    {icon:'🎯', label:'Open Goals', run:()=>goView('goals')},
+    {icon:'📜', label:'Open Activity log', run:()=>goView('activity')},
+    {icon:'🗃️', label:'Open Backlog', run:()=>goView('backlog')},
+    {icon:'⤓', label:'Export tasks as CSV', run:()=>exportCsv()},
+    {icon:'📅', label:'Export calendar (.ics)', run:()=>exportIcs()},
     {icon:'🔄', label:'Weekly Review', run:()=>openWeeklyReview()},
     {icon:'📋', label:'New project from template', run:()=>openTemplatePicker()},
     {icon:'📁', label:'New folder', run:()=>openFolderModal()},
@@ -2499,6 +2644,14 @@ function openSettings() {
       <div class="row2"><div class="field"><label>Day starts</label><input type="number" id="set-daystart" min="0" max="23" value="${s.dayStart}"></div>
         <div class="field"><label>Day ends</label><input type="number" id="set-dayend" min="1" max="24" value="${s.dayEnd}"></div></div>
       <div class="field"><label>Your name (for comments)</label><input type="text" id="set-name" value="${esc(s.userName||'Me')}"></div>
+      <div class="field"><label>Workspace name (branding)</label><input type="text" id="set-ws" value="${esc(s.workspaceName||'TaskFlow')}"></div>
+      <div class="field"><label>Power tools</label><div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" data-act="manage-automations">⚙ Automations${(state.automations||[]).length?' ('+state.automations.length+')':''}</button>
+        <button class="btn ghost" data-act="manage-fields">🧩 Custom fields${(state.customFields||[]).length?' ('+state.customFields.length+')':''}</button>
+      </div></div>
+      <div class="field"><label>🔒 Passcode lock</label><div style="display:flex;gap:8px">
+        <button class="btn ghost" id="set-passcode">${s.passcode?'Change passcode':'Set passcode'}</button>
+        ${s.passcode?'<button class="btn ghost" id="set-passcode-off">Remove</button>':''}</div></div>
       <div class="field"><label>Danger zone</label><button class="btn danger" id="set-reset">Reset all data</button></div>
     </div>
     <div class="modal-foot"><span style="flex:1;color:var(--text-faint);font-size:12px">Ctrl/⌘K for command palette</span><button class="btn primary" data-act="close-modal">Done</button></div></div></div>`;
@@ -2508,6 +2661,11 @@ function openSettings() {
   $('#set-sound').onchange=e=>{ s.sound=e.target.checked; persist(); if(s.sound)playSound('complete'); };
   $('#set-notif').onchange=e=>{ if(e.target.checked){ requestNotifications(); } else { s.notifications=false; persist(); } };
   $('#set-name').onchange=e=>{ s.userName=e.target.value.trim()||'Me'; persist(); };
+  $('#set-ws').onchange=e=>{ s.workspaceName=e.target.value.trim()||'TaskFlow'; persist(); renderSidebar(); wireSidebar(); document.title=s.workspaceName; };
+  $('#set-passcode').onclick=()=>{ const p=prompt('Set a passcode (numbers or text). Stored locally only.'); if(p){ s.passcode=p; persist(); toast('🔒 Passcode set'); openSettings(); } };
+  const off=$('#set-passcode-off'); if(off) off.onclick=()=>{ s.passcode=null; persist(); toast('Passcode removed'); openSettings(); };
+  modalRoot.querySelectorAll('[data-act="manage-automations"]').forEach(b=>b.onclick=openAutomations);
+  modalRoot.querySelectorAll('[data-act="manage-fields"]').forEach(b=>b.onclick=openCustomFields);
   $('#set-carry').onchange=e=>{ s.autoCarry=e.target.checked; s.lastCarry=null; persist(); if(s.autoCarry){ maybeAutoCarry(); render(); } };
   $('#set-daystart').onchange=e=>{ s.dayStart=Math.max(0,Math.min(23,+e.target.value||9)); persist(); };
   $('#set-dayend').onchange=e=>{ s.dayEnd=Math.max(1,Math.min(24,+e.target.value||18)); persist(); };
@@ -2709,6 +2867,282 @@ function openWeeklyReview() {
 }
 
 // ============================================================
+//  FEATURE: Statuses
+// ============================================================
+const STATUSES = [
+  { k:'todo', label:'To do', color:'#94a3b8', icon:'○' },
+  { k:'inprogress', label:'In progress', color:'#3b82f6', icon:'◐' },
+  { k:'inreview', label:'In review', color:'#a855f7', icon:'◑' },
+  { k:'blocked', label:'Blocked', color:'#ef4444', icon:'⊘' },
+  { k:'done', label:'Done', color:'#10b981', icon:'●' },
+];
+const statusDef = k => STATUSES.find(s=>s.k===k) || STATUSES[0];
+function statusChipHtml(t){ const s=statusDef(t.status); return `<span class="status-chip" style="color:${s.color};border-color:${s.color}">${s.icon} ${s.label}</span>`; }
+function setStatus(id, k) {
+  const t = state.tasks.find(x=>x.id===id); if(!t) return;
+  t.status = k;
+  if (k==='done' && !t.completed) { t.completed=true; t.completedAt=Date.now(); onCompletion(t); announceUnblocked(t.id); playSound('complete'); logActivity('completed', t.id, t.title); }
+  else if (k!=='done' && t.completed) { t.completed=false; t.completedAt=null; undoCompletion(t); }
+  logActivity('status', t.id, t.title+' → '+statusDef(k).label);
+  persist(); render();
+}
+
+// ============================================================
+//  FEATURE: Activity log / audit trail
+// ============================================================
+function logActivity(type, taskId, text) {
+  state.activityLog = state.activityLog || [];
+  state.activityLog.unshift({ id:uid('act'), ts:Date.now(), type, taskId, text:String(text||'').slice(0,120) });
+  if (state.activityLog.length>500) state.activityLog.length=500;   // cap
+}
+const ACT_ICON = { created:'➕', completed:'✓', status:'🔀', deleted:'🗑', edited:'✎', moved:'📁', comment:'💬', goal:'🎯' };
+function activityViewHtml() {
+  const log = state.activityLog||[];
+  const rows = log.slice(0,200).map(a=>`<div class="act-row"><span class="act-ico">${ACT_ICON[a.type]||'•'}</span>
+    <span class="act-text">${esc(a.text)}</span><span class="act-time">${relTime(a.ts)}</span></div>`).join('');
+  return `<div class="view-title-row"><div class="view-title"><span class="emoji">📜</span>Activity</div>
+    <div class="view-actions"><button class="btn ghost" data-act="clear-activity" style="padding:6px 12px">Clear</button></div></div>
+    <div class="view-sub">A running audit trail of changes in this workspace (most recent first).</div>
+    ${rows || '<div class="empty-state"><div class="big">🗒️</div>No activity yet.</div>'}`;
+}
+function relTime(ts){ const s=Math.floor((Date.now()-ts)/1000); if(s<60)return s+'s ago'; const m=Math.floor(s/60); if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; const d=Math.floor(h/24); if(d<7)return d+'d ago'; return fmtDate(ymd(new Date(ts))); }
+
+// ============================================================
+//  FEATURE: Automations (lightweight rule engine)
+// ============================================================
+function applyAutomations(t) {
+  (state.automations||[]).forEach(r=>{
+    if (r.projectId && t.projectId!==r.projectId) return;
+    if (r.keyword && !(t.title+' '+t.description).toLowerCase().includes(r.keyword.toLowerCase())) return;
+    const set = r.set||{};
+    if (set.assignee!=null && !t.assignee) t.assignee = set.assignee;
+    if (set.priority!=null) t.priority = set.priority;
+    if (set.labelId && !t.labels.includes(set.labelId)) t.labels.push(set.labelId);
+    if (set.status) t.status = set.status;
+  });
+}
+
+// ============================================================
+//  FEATURE: Real-time cross-tab sync
+// ============================================================
+let _bc=null, _suppressSync=false;
+function initRealtime() {
+  try { _bc = new BroadcastChannel('taskflow-sync'); _bc.onmessage = (e)=>{ if(e.data==='update'){ const s=load(); if(s){ state=migrate(s); render(); } } }; } catch(e){}
+  window.addEventListener('storage', (e)=>{ if(e.key===STORE_KEY){ const s=load(); if(s){ state=migrate(s); render(); } } });
+}
+const _origPersist = persist;
+persist = function(){ _origPersist(); if(_bc){ try{ _bc.postMessage('update'); }catch(e){} } };
+
+// ============================================================
+//  FEATURE: Goals
+// ============================================================
+function goalProgress(g) {
+  let pool = state.tasks.filter(t=>!t.parentId);
+  if (g.scope==='project') pool = pool.filter(t=>t.projectId===g.refId);
+  else if (g.scope==='label') pool = pool.filter(t=>t.labels.includes(g.refId));
+  const done = pool.filter(t=>t.completed && (!g.since || (t.completedAt||0)>=g.since)).length;
+  return { done, target:g.target||1 };
+}
+function goalsViewHtml() {
+  const cards = (state.goals||[]).map(g=>{
+    const {done,target}=goalProgress(g); const pct=Math.min(100,Math.round(done/target*100));
+    const scopeLbl = g.scope==='project'?(getProject(g.refId)||{}).name : g.scope==='label'?'@'+((getLabel(g.refId)||{}).name||'') : 'All tasks';
+    return `<div class="goal-card"><div class="goal-head"><b>${esc(g.name)}</b><button class="icon-btn" data-delgoal="${g.id}">🗑</button></div>
+      <div class="goal-scope">${esc(scopeLbl||'')}</div>
+      <div class="goal-bar"><div class="goal-fill ${done>=target?'done':''}" style="width:${pct}%"></div></div>
+      <div class="goal-meta">${done} / ${target} ${done>=target?'✓ achieved':''}</div></div>`;
+  }).join('');
+  return `<div class="view-title-row"><div class="view-title"><span class="emoji">🎯</span>Goals</div>
+    <div class="view-actions"><button class="btn primary" data-act="add-goal" style="padding:6px 12px">+ New goal</button></div></div>
+    <div class="view-sub">Set completion targets and track progress automatically.</div>
+    <div class="goal-grid">${cards || '<div class="empty-state"><div class="big">🎯</div>No goals yet — set one!</div>'}</div>`;
+}
+function openGoalModal() {
+  const projOpts = activeProjects().map(p=>`<option value="project:${p.id}">${esc(p.name)}</option>`).join('');
+  const labOpts = state.labels.map(l=>`<option value="label:${l.id}">@${esc(l.name)}</option>`).join('');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">🎯 New goal</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Goal name</label><input type="text" id="g-name" placeholder="e.g. Finish 20 work tasks"></div>
+      <div class="row2"><div class="field"><label>Target (tasks)</label><input type="number" id="g-target" min="1" value="10"></div>
+      <div class="field"><label>Scope</label><select id="g-scope"><option value="all">All tasks</option>${projOpts}${labOpts}</select></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn primary" id="g-save">Create</button></div></div></div>`;
+  $('#g-save').onclick=()=>{ const name=$('#g-name').value.trim(); if(!name)return; const sc=$('#g-scope').value.split(':');
+    state.goals.push({ id:uid('goal'), name, target:Math.max(1,+$('#g-target').value||10), scope:sc[0], refId:sc[1]||null, since:Date.now() });
+    logActivity('goal','','Goal created: '+name); persist(); closeModal(); render(); };
+  setTimeout(()=>$('#g-name').focus(),30);
+}
+
+// ============================================================
+//  FEATURE: Timeline / Gantt
+// ============================================================
+function timelineViewHtml() {
+  const tasks = state.tasks.filter(t=>!t.parentId && !t.completed && (t.dueDate||t.deadline)).slice(0,60);
+  if (!tasks.length) return `<div class="view-title-row"><div class="view-title"><span class="emoji">📐</span>Timeline</div></div><div class="empty-state"><div class="big">📐</div>Add due dates to tasks to see them on the timeline.</div>`;
+  const ends = tasks.map(t=>t.deadline||t.dueDate);
+  const starts = tasks.map(t=>{ const end=t.deadline||t.dueDate; const days=Math.ceil((t.estimate||60)/ (60*4)); return addDays(end,-Math.max(1,days)); });
+  let min = [...starts, todayStr()].sort()[0];
+  let max = [...ends, todayStr()].sort().slice(-1)[0];
+  const span = Math.max(7, dayDiff(max,min)+2);
+  const colW = 34;
+  // header days
+  let head=''; for(let i=0;i<span;i++){ const d=addDays(min,i); head+=`<div class="tl-day ${d===todayStr()?'tl-today':''}" style="width:${colW}px">${parseYmd(d).getDate()}</div>`; }
+  const rows = tasks.map((t,idx)=>{
+    const end=t.deadline||t.dueDate; const start=starts[idx];
+    const off=dayDiff(start,min), w=Math.max(1,dayDiff(end,start)+1);
+    const c=statusDef(t.status).color;
+    return `<div class="tl-row"><div class="tl-label" title="${esc(t.title)}">${t.milestone?'★ ':''}${esc(t.title)}</div>
+      <div class="tl-track" style="width:${span*colW}px"><div class="tl-bar" data-task="${t.id}" style="left:${off*colW}px;width:${w*colW-4}px;background:${c}">${t.deadline?'⏰':''}${esc(t.title)}</div></div></div>`;
+  }).join('');
+  return `<div class="view-title-row"><div class="view-title"><span class="emoji">📐</span>Timeline</div></div>
+    <div class="view-sub">Gantt view — bar length reflects estimate; ⏰ marks a hard deadline. Click a bar to open.</div>
+    <div class="tl-wrap"><div class="tl-head"><div class="tl-label"></div><div class="tl-track" style="width:${span*colW}px;display:flex">${head}</div></div>${rows}</div>`;
+}
+
+// ============================================================
+//  FEATURE: Reports + exports
+// ============================================================
+function reportsViewHtml() {
+  const open = state.tasks.filter(t=>!t.parentId && !t.completed);
+  const doneAll = state.tasks.filter(t=>!t.parentId && t.completed);
+  const rate = (doneAll.length+open.length)? Math.round(doneAll.length/(doneAll.length+open.length)*100):0;
+  // per project completion
+  const proj = [getProject('inbox'),...activeProjects()].map(p=>{ const o=state.tasks.filter(t=>t.projectId===p.id&&!t.parentId&&!t.completed).length; const d=state.tasks.filter(t=>t.projectId===p.id&&!t.parentId&&t.completed).length; return {p,o,d,r:(o+d)?Math.round(d/(o+d)*100):0}; }).filter(x=>x.o+x.d>0);
+  const projRows = proj.map(x=>`<div class="stat-prow"><span class="stat-pname"><span class="proj-dot" style="background:${x.p.color}"></span>${esc(x.p.name)}</span><div class="stat-pbar"><div style="width:${x.r}%;background:${x.p.color}"></div></div><span class="stat-pn">${x.r}%</span></div>`).join('');
+  // per assignee
+  const people={}; state.tasks.filter(t=>!t.parentId&&t.assignee).forEach(t=>{ const a=t.assignee; people[a]=people[a]||{open:0,done:0}; if(t.completed)people[a].done++; else people[a].open++; });
+  const peopleRows = Object.entries(people).map(([n,v])=>`<div class="rep-row"><span class="avatar" style="width:24px;height:24px;font-size:11px">${esc(n[0].toUpperCase())}</span><span style="flex:1">${esc(n)}</span><span class="pill">${v.open} open</span><span class="pill">${v.done} done</span></div>`).join('') || '<div style="color:var(--text-faint)">No assignees yet.</div>';
+  // timesheet
+  const tracked = state.tasks.filter(t=>t.timeSpent).sort((a,b)=>b.timeSpent-a.timeSpent).slice(0,10);
+  const totalTime = state.tasks.reduce((s,t)=>s+(t.timeSpent||0),0);
+  const tsRows = tracked.map(t=>`<div class="rep-row"><span style="flex:1">${esc(t.title)}</span><span class="pill">${fmtDuration(t.timeSpent)}</span></div>`).join('') || '<div style="color:var(--text-faint)">No time tracked yet — use the Focus timer.</div>';
+  return `<div class="view-title-row"><div class="view-title"><span class="emoji">📈</span>Reports</div>
+    <div class="view-actions"><button class="btn ghost" data-act="export-csv" style="padding:6px 12px">⤓ CSV</button><button class="btn ghost" data-act="export-ics" style="padding:6px 12px">📅 .ics</button></div></div>
+    <div class="stat-cards">
+      ${statCard('✅','Completion rate',rate+'%')}
+      ${statCard('📋','Open',open.length)}
+      ${statCard('🏁','Done',doneAll.length)}
+      ${statCard('⏱','Time tracked',fmtDuration(totalTime))}
+    </div>
+    <div class="stat-panel"><div class="stat-panel-head"><b>Completion rate by project</b></div>${projRows||'<div style="color:var(--text-faint)">No data.</div>'}</div>
+    <div class="stat-panel"><div class="stat-panel-head"><b>Resource report (by assignee)</b></div>${peopleRows}</div>
+    <div class="stat-panel"><div class="stat-panel-head"><b>Timesheet (most-tracked tasks)</b></div>${tsRows}</div>`;
+}
+function exportCsv() {
+  const cols=['title','project','status','priority','dueDate','deadline','assignee','estimate','timeSpent','completed','labels'];
+  const rows=[cols.join(',')];
+  state.tasks.filter(t=>!t.parentId).forEach(t=>{
+    const vals=[t.title,(getProject(t.projectId)||{}).name||'',t.status,'P'+t.priority,t.dueDate||'',t.deadline||'',t.assignee||'',t.estimate||'',t.timeSpent||'',t.completed?'yes':'no',t.labels.map(id=>(getLabel(id)||{}).name).filter(Boolean).join(' ')];
+    rows.push(vals.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+  });
+  downloadBlob(rows.join('\n'),'taskflow-tasks.csv','text/csv');
+  toast('⤓ Exported CSV');
+}
+function exportIcs() {
+  const pad=n=>String(n).padStart(2,'0');
+  let lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//TaskFlow//EN'];
+  state.tasks.filter(t=>!t.parentId && t.dueDate && !t.completed).forEach(t=>{
+    const d=t.dueDate.replace(/-/g,''); const dt = t.dueTime? d+'T'+t.dueTime.replace(':','')+'00' : d;
+    lines.push('BEGIN:VEVENT','UID:'+t.id+'@taskflow', t.dueTime?('DTSTART:'+dt):('DTSTART;VALUE=DATE:'+d), 'SUMMARY:'+t.title.replace(/[\n,;]/g,' '), 'END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  downloadBlob(lines.join('\r\n'),'taskflow.ics','text/calendar');
+  toast('📅 Exported calendar (.ics)');
+}
+function downloadBlob(content, filename, type) {
+  const blob=new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
+}
+
+// ============================================================
+//  FEATURE: Bulk multi-line task creation
+// ============================================================
+function openBulkAdd() {
+  const projOpts=['inbox',...activeProjects().map(p=>p.id)].map(pid=>{const p=getProject(pid);return `<option value="${pid}">${esc(p.name)}</option>`;}).join('');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">➕ Bulk add tasks</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body"><div class="field"><label>One task per line (natural language works: "Pay rent tomorrow p1 @home")</label>
+      <textarea class="import-area" id="bulk-text" style="min-height:180px;white-space:pre-wrap" placeholder="Buy milk\nCall dentist tomorrow p2\nShip release ~2h friday"></textarea></div>
+      <div class="field"><label>Add to project</label><select id="bulk-proj">${projOpts}</select></div></div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn primary" id="bulk-go">Add tasks</button></div></div></div>`;
+  $('#bulk-go').onclick=()=>{ const lines=$('#bulk-text').value.split('\n').map(s=>s.trim()).filter(Boolean); const pid=$('#bulk-proj').value;
+    lines.forEach(l=>addTaskFromParse(parseQuickAdd(l), pid, null)); persist(); closeModal(); render(); toast(`Added ${lines.length} tasks`); };
+  setTimeout(()=>$('#bulk-text').focus(),30);
+}
+
+// ============================================================
+//  FEATURE: Passcode lock
+// ============================================================
+function showLockScreen() {
+  let el=document.getElementById('lockscreen');
+  if(!el){ el=document.createElement('div'); el.id='lockscreen'; document.body.appendChild(el); }
+  el.innerHTML = `<div class="lock-box"><div class="lock-logo">🔒</div><div class="lock-title">${esc(state.settings.workspaceName||'TaskFlow')}</div>
+    <input type="password" id="lock-pin" class="lock-pin" placeholder="Enter passcode" inputmode="numeric" autocomplete="off">
+    <div class="lock-err" id="lock-err"></div></div>`;
+  const inp=el.querySelector('#lock-pin');
+  const tryUnlock=()=>{ if(inp.value===state.settings.passcode){ el.remove(); } else { el.querySelector('#lock-err').textContent='Wrong passcode'; inp.value=''; } };
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter')tryUnlock(); });
+  setTimeout(()=>inp.focus(),50);
+}
+
+// ============================================================
+//  FEATURE: Attachments + custom fields helpers (used in detail)
+// ============================================================
+function attachmentsHtml(t) {
+  const items=(t.attachments||[]).map((f,i)=>`<div class="att-row"><span class="att-name">📎 ${esc(f.name)}</span><span class="att-size">${fmtBytes(f.size)}</span>
+    <a class="att-dl" href="${f.dataUrl}" download="${esc(f.name)}">⤓</a><button class="icon-btn" data-delatt="${i}">✕</button></div>`).join('');
+  return `<div id="d-atts">${items}</div><label class="att-add btn ghost" style="display:inline-block;margin-top:6px">📎 Attach file<input type="file" id="d-attinput" style="display:none" multiple></label>`;
+}
+function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(0)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function customFieldsHtml(t) {
+  if(!(state.customFields||[]).length) return '';
+  const rows=state.customFields.map(f=>{
+    const v=(t.custom||{})[f.id]||'';
+    if(f.type==='select') return `<div class="field"><label>${esc(f.name)}</label><select data-cf="${f.id}"><option value="">—</option>${(f.options||[]).map(o=>`<option ${v===o?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+    return `<div class="field"><label>${esc(f.name)}</label><input type="${f.type==='number'?'number':'text'}" data-cf="${f.id}" value="${esc(v)}"></div>`;
+  }).join('');
+  return `<div class="detail-section-title">Custom fields</div><div class="row2" style="flex-wrap:wrap">${rows}</div>`;
+}
+
+// ============================================================
+//  FEATURE: Automations + Custom fields managers
+// ============================================================
+function openAutomations() {
+  const rows=(state.automations||[]).map(r=>`<div class="tpl-row"><div class="tpl-info"><b>${esc(r.name||'Rule')}</b><span class="tpl-meta">${r.projectId?'in '+esc((getProject(r.projectId)||{}).name||''):'any project'}${r.keyword?' · contains “'+esc(r.keyword)+'”':''} → ${esc(describeSet(r.set))}</span></div><button class="icon-btn" data-delauto="${r.id}">🗑</button></div>`).join('');
+  const projOpts=activeProjects().map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const labOpts=state.labels.map(l=>`<option value="${l.id}">@${esc(l.name)}</option>`).join('');
+  modalRoot.innerHTML=`<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">⚙ Automations</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body"><div class="view-sub" style="padding-bottom:8px">When a new task is created, automatically apply changes.</div>${rows}
+      <div class="detail-section-title">New rule</div>
+      <div class="field"><label>Name</label><input type="text" id="au-name" placeholder="e.g. Tag work tasks urgent"></div>
+      <div class="row2"><div class="field"><label>In project (optional)</label><select id="au-proj"><option value="">Any</option>${projOpts}</select></div>
+      <div class="field"><label>Title contains (optional)</label><input type="text" id="au-kw" placeholder="keyword"></div></div>
+      <div class="row2"><div class="field"><label>Set priority</label><select id="au-pri"><option value="">—</option><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></div>
+      <div class="field"><label>Add label</label><select id="au-lbl"><option value="">—</option>${labOpts}</select></div></div>
+      <div class="field"><label>Set assignee</label><input type="text" id="au-assignee" placeholder="name"></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button><button class="btn primary" id="au-add">Add rule</button></div></div></div>`;
+  modalRoot.querySelectorAll('[data-delauto]').forEach(el=>el.onclick=()=>{ state.automations=state.automations.filter(r=>r.id!==el.dataset.delauto); persist(); openAutomations(); });
+  $('#au-add').onclick=()=>{ const set={}; if($('#au-pri').value)set.priority=+$('#au-pri').value; if($('#au-lbl').value)set.labelId=$('#au-lbl').value; if($('#au-assignee').value.trim())set.assignee=$('#au-assignee').value.trim();
+    if(!Object.keys(set).length){ toast('Pick at least one action'); return; }
+    state.automations.push({ id:uid('auto'), name:$('#au-name').value.trim()||'Rule', projectId:$('#au-proj').value||null, keyword:$('#au-kw').value.trim()||null, set }); persist(); openAutomations(); };
+}
+function describeSet(set){ const p=[]; if(set.priority)p.push('P'+set.priority); if(set.labelId)p.push('+@'+((getLabel(set.labelId)||{}).name||'')); if(set.assignee)p.push('assign '+set.assignee); if(set.status)p.push(set.status); return p.join(', ')||'—'; }
+function openCustomFields() {
+  const rows=(state.customFields||[]).map(f=>`<div class="tpl-row"><div class="tpl-info"><b>${esc(f.name)}</b><span class="tpl-meta">${esc(f.type)}${f.options?' · '+esc(f.options.join(', ')):''}</span></div><button class="icon-btn" data-delcf="${f.id}">🗑</button></div>`).join('');
+  modalRoot.innerHTML=`<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">🧩 Custom fields</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body"><div class="view-sub" style="padding-bottom:8px">Add fields that appear on every task.</div>${rows}
+      <div class="detail-section-title">New field</div>
+      <div class="row2"><div class="field"><label>Name</label><input type="text" id="cf-name" placeholder="e.g. Story points"></div>
+      <div class="field"><label>Type</label><select id="cf-type"><option value="text">Text</option><option value="number">Number</option><option value="select">Select</option></select></div></div>
+      <div class="field"><label>Options (for Select, comma-separated)</label><input type="text" id="cf-opts" placeholder="Low, Medium, High"></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button><button class="btn primary" id="cf-add">Add field</button></div></div></div>`;
+  modalRoot.querySelectorAll('[data-delcf]').forEach(el=>el.onclick=()=>{ state.customFields=state.customFields.filter(f=>f.id!==el.dataset.delcf); persist(); openCustomFields(); });
+  $('#cf-add').onclick=()=>{ const name=$('#cf-name').value.trim(); if(!name)return; const type=$('#cf-type').value;
+    const f={ id:uid('cf'), name, type }; if(type==='select')f.options=$('#cf-opts').value.split(',').map(s=>s.trim()).filter(Boolean);
+    state.customFields.push(f); persist(); openCustomFields(); };
+}
+
+// ============================================================
 //  GLOBAL
 // ============================================================
 function applyTheme(){ document.documentElement.setAttribute('data-theme', state.settings.theme==='dark'?'dark':'light'); }
@@ -2789,8 +3223,10 @@ applyTheme();
 applyAccent(state.settings.accent, state.settings.themePreset);
 checkNightOwl();
 maybeAutoCarry();
+initRealtime();
 render();
 handleShareHash();
+if (state.settings.passcode) showLockScreen();
 startNotificationLoop();
 window.addEventListener('beforeunload', persist);
 </script>
