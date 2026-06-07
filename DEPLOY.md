@@ -5,6 +5,37 @@ TaskFlow is a single static file (`index.html`) with no build step and no backen
 > Your data is stored per-browser in `localStorage`. Each device/browser keeps its own list. Use **Import / Export** to move data between them.
 
 A ready-to-upload copy is in **`deploy/`** and zipped as **`taskflow-site.zip`**.
+This folder is also a **git repo** already committed and ready to push, with a
+**`Dockerfile`** + **`Caddyfile`** so container hosts (Railway, Render, Fly) build it with zero guesswork.
+
+---
+
+## ⭐ Option R — Railway (recommended)
+
+TaskFlow ships with a `Dockerfile` (Caddy serving the static file on Railway's `$PORT`)
+and a `railway.json`, so Railway just builds and runs it.
+
+### Easiest: deploy from GitHub (browser only, no CLI)
+1. Push this folder to a GitHub repo (one-time):
+   ```bash
+   git remote add origin https://github.com/<you>/taskflow.git
+   git push -u origin main
+   ```
+2. Go to **https://railway.app** → **New Project** → **Deploy from GitHub repo** → pick `taskflow`.
+3. Railway detects the `Dockerfile` and builds automatically.
+4. Open the service → **Settings → Networking → Generate Domain**.
+5. You get a public URL like `https://taskflow-production.up.railway.app` — open it on your phone.
+
+### Alternative: Railway CLI (deploy straight from this folder, no GitHub)
+```bash
+npm i -g @railway/cli      # or: winget install Railway.Railway
+railway login              # opens your browser
+railway init               # create a new project
+railway up                 # builds the Dockerfile and deploys this folder
+railway domain             # prints your public URL
+```
+
+> No env vars or database needed — it's a static client app. Railway's `$PORT` is handled by the `Caddyfile` (`:{$PORT}`).
 
 ---
 

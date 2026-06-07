@@ -12,3 +12,7 @@ header {
 	# Allow the app to be embedded / opened anywhere; it's a static client app.
 	Cache-Control "public, max-age=300"
 }
+
+# Correct MIME type so browsers treat the PWA manifest as installable.
+@manifest path /manifest.webmanifest
+header @manifest Content-Type "application/manifest+json"
