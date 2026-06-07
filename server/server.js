@@ -1,122 +1,122 @@
-// TaskFlow backend — accounts, cross-device state sync, real-time, REST API.
-// Single Node service: also serves the static app. Storage = JSON file on a Railway Volume.
+// TaskFlow backend — accounts + shared multi-user workspaces + real-time + REST API.
+// Serves the static app too. Storage: JSON file (default) or Postgres (if DATABASE_URL).
 import express from 'express';
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { makeStore } from './storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.join(__dirname, 'public');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.JWT_SECRET) console.warn('[taskflow] JWT_SECRET not set — using a random secret (tokens reset on restart). Set JWT_SECRET in Railway.');
+if (!process.env.JWT_SECRET) console.warn('[taskflow] JWT_SECRET not set — using a random secret (sessions reset on restart). Set JWT_SECRET in Railway.');
 
-// ---------- tiny JSON store (in-memory + atomic file writes) ----------
-fs.mkdirSync(DATA_DIR, { recursive: true });
-let db = { users: {}, states: {} };          // users: {emailLower:{id,email,hash,createdAt}}, states:{userId:{state,rev,updatedAt}}
-try { if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch (e) { console.error('db read failed', e); }
-let saveQueued = false;
-function saveDb() {
-  if (saveQueued) return; saveQueued = true;
-  setTimeout(() => {
-    saveQueued = false;
-    try { const tmp = DB_FILE + '.tmp'; fs.writeFileSync(tmp, JSON.stringify(db)); fs.renameSync(tmp, DB_FILE); }
-    catch (e) { console.error('db write failed', e); }
-  }, 50);
-}
+const store = makeStore(DATA_DIR);
+const MODE = process.env.DATABASE_URL ? 'pg' : 'json';
 
-// ---------- helpers ----------
 const norm = (e) => String(e || '').trim().toLowerCase();
 const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
-function sign(user) { return jwt.sign({ uid: user.id, email: user.email }, JWT_SECRET, { expiresIn: '180d' }); }
-function authUser(req) {
-  const h = req.headers.authorization || '';
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!m) return null;
-  try { const p = jwt.verify(m[1], JWT_SECRET); return p; } catch (e) { return null; }
-}
+const sign = (u) => jwt.sign({ uid: u.id, email: u.email }, JWT_SECRET, { expiresIn: '180d' });
+function auth(req) { const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i); if (!m) return null; try { return jwt.verify(m[1], JWT_SECRET); } catch (e) { return null; } }
+function asyncH(fn) { return (req, res) => Promise.resolve(fn(req, res)).catch(e => { console.error(e); res.status(500).json({ error: 'Server error' }); }); }
 
-// ---------- app ----------
 const app = express();
 app.use(express.json({ limit: '8mb' }));
 app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); if (req.method === 'OPTIONS') return res.sendStatus(204); next(); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, users: Object.keys(db.users).length }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE }));
 
-app.post('/api/signup', async (req, res) => {
+app.post('/api/signup', asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || '');
   if (!validEmail(email)) return res.status(400).json({ error: 'Invalid email' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-  if (db.users[email]) return res.status(409).json({ error: 'Account already exists — log in instead' });
-  const user = { id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10), createdAt: Date.now() };
-  db.users[email] = user; saveDb();
-  res.json({ token: sign(user), email });
-});
+  if (await store.getUserByEmail(email)) return res.status(409).json({ error: 'Account already exists — log in instead' });
+  const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10) });
+  res.json({ token: sign(user), email, workspaces: await store.listWorkspaces(user.id) });
+}));
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || '');
-  const user = db.users[email];
+  const user = await store.getUserByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.hash))) return res.status(401).json({ error: 'Wrong email or password' });
-  res.json({ token: sign(user), email });
-});
+  res.json({ token: sign(user), email, workspaces: await store.listWorkspaces(user.id) });
+}));
 
-app.get('/api/state', (req, res) => {
-  const u = authUser(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
-  const rec = db.states[u.uid];
-  res.json({ state: rec ? rec.state : null, rev: rec ? rec.rev : 0 });
-});
+app.get('/api/me', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); res.json({ email: u.email, workspaces: await store.listWorkspaces(u.uid) }); }));
 
-app.put('/api/state', (req, res) => {
-  const u = authUser(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
-  const incoming = req.body.state;
-  if (typeof incoming !== 'object' || incoming === null) return res.status(400).json({ error: 'state must be an object' });
-  const prev = db.states[u.uid];
-  const rev = (prev ? prev.rev : 0) + 1;
-  db.states[u.uid] = { state: incoming, rev, updatedAt: Date.now() };
-  saveDb();
-  broadcast(u.uid, req.body.clientId, rev);
+app.get('/api/workspaces', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); res.json({ workspaces: await store.listWorkspaces(u.uid) }); }));
+
+app.post('/api/workspaces', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); const ws = await store.createWorkspace(u.uid, req.body.name); res.json({ workspace: ws }); }));
+
+app.get('/api/workspaces/:id/state', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
+  const rec = await store.getState(req.params.id); res.json({ state: rec ? rec.state : null, rev: rec ? rec.rev : 0 });
+}));
+
+app.put('/api/workspaces/:id/state', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
+  if (typeof req.body.state !== 'object' || req.body.state === null) return res.status(400).json({ error: 'state must be an object' });
+  const rev = await store.putState(req.params.id, req.body.state);
+  broadcast(req.params.id, req.body.clientId, rev);
   res.json({ ok: true, rev });
-});
+}));
 
-// ---------- static app ----------
+app.post('/api/workspaces/:id/invite', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
+  res.json({ code: await store.createInvite(req.params.id) });
+}));
+
+app.get('/api/workspaces/:id/members', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
+  res.json({ members: await store.listMembers(req.params.id) });
+}));
+
+app.post('/api/join', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const ws = await store.consumeInvite(u.uid, String(req.body.code || '').trim());
+  if (!ws) return res.status(404).json({ error: 'Invalid or expired invite code' });
+  res.json({ workspace: ws });
+}));
+
+// static app
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
-app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' });
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
-});
+app.get('*', (req, res) => { if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' }); res.sendFile(path.join(PUBLIC_DIR, 'index.html')); });
 
-// ---------- realtime (WebSocket) ----------
+// realtime
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
-const sockets = new Map(); // uid -> Set of {ws, clientId}
-function broadcast(uid, fromClientId, rev) {
-  const set = sockets.get(uid); if (!set) return;
-  for (const c of set) {
-    if (c.clientId && c.clientId === fromClientId) continue; // don't echo to the writer
-    try { c.ws.send(JSON.stringify({ type: 'update', rev })); } catch (e) {}
-  }
+const rooms = new Map(); // workspaceId -> Set<{ws,clientId}>
+function broadcast(wsId, fromClientId, rev) {
+  const set = rooms.get(wsId); if (!set) return;
+  for (const c of set) { if (c.clientId && c.clientId === fromClientId) continue; try { c.ws.send(JSON.stringify({ type: 'update', rev })); } catch (e) {} }
 }
-wss.on('connection', (ws, req) => {
-  let uid = null;
+wss.on('connection', async (ws, req) => {
   try {
     const u = new URL(req.url, 'http://x');
     const token = u.searchParams.get('token');
+    const wsId = u.searchParams.get('workspace');
     const clientId = u.searchParams.get('clientId') || '';
     const p = jwt.verify(token, JWT_SECRET);
-    uid = p.uid;
-    if (!sockets.has(uid)) sockets.set(uid, new Set());
+    if (!wsId || !(await store.role(p.uid, wsId))) { ws.close(); return; }
+    if (!rooms.has(wsId)) rooms.set(wsId, new Set());
     const entry = { ws, clientId };
-    sockets.get(uid).add(entry);
-    ws.on('close', () => { const s = sockets.get(uid); if (s) { s.delete(entry); if (!s.size) sockets.delete(uid); } });
-    ws.send(JSON.stringify({ type: 'connected' }));
+    rooms.get(wsId).add(entry);
+    ws.on('close', () => { const s = rooms.get(wsId); if (s) { s.delete(entry); if (!s.size) rooms.delete(wsId); } });
+    ws.send(JSON.stringify({ type: 'connected', workspace: wsId }));
   } catch (e) { try { ws.close(); } catch (_) {} }
 });
 
-server.listen(PORT, () => console.log(`[taskflow] listening on :${PORT} · data=${DATA_DIR}`));
+(async () => {
+  try { await store.init(); } catch (e) { console.error('[taskflow] store init failed', e); }
+  server.listen(PORT, () => console.log(`[taskflow] listening on :${PORT} · mode=${MODE} · data=${DATA_DIR}`));
+})();

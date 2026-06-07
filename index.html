@@ -2952,8 +2952,10 @@ const SYNC = {
   token: localStorage.getItem('tf.token') || null,
   email: localStorage.getItem('tf.email') || null,
   clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
+  workspaces: [], activeWs: localStorage.getItem('tf.ws') || null,
   ws: null, status: 'off', _suppress: false, _pushTimer: null,
   get on(){ return !!this.token; },
+  get active(){ return (this.workspaces||[]).find(w=>w.id===this.activeWs) || (this.workspaces||[])[0] || null; },
   async api(path, opts={}) {
     const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
     if (this.token) headers['Authorization'] = 'Bearer '+this.token;
@@ -2962,36 +2964,32 @@ const SYNC = {
     if (!res.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
     return data;
   },
-  async signup(email, password) { const d = await this.api('/api/signup',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.firstSync(); return d; },
-  async login(email, password) { const d = await this.api('/api/login',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.firstSync(); return d; },
-  _auth(d) { this.token=d.token; this.email=d.email; localStorage.setItem('tf.token',d.token); localStorage.setItem('tf.email',d.email); this.status='on'; },
-  logout() { this.token=null; this.email=null; localStorage.removeItem('tf.token'); localStorage.removeItem('tf.email'); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
-  async firstSync() {
-    // pull remote; if remote empty, seed it with local
-    let remote=null; try { remote = await this.api('/api/state'); } catch(e){ remote=null; }
-    if (remote && remote.state) { this._suppress=true; state = migrate(remote.state); _origPersist(); this._suppress=false; applyAccent(state.settings.accent,state.settings.themePreset); applyTheme(); render(); toast('☁ Synced from cloud'); }
-    else { await this.push(true); toast('☁ Cloud sync enabled'); }
+  async signup(email, password) { const d = await this.api('/api/signup',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.enterWorkspace(); return d; },
+  async login(email, password) { const d = await this.api('/api/login',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.enterWorkspace(); return d; },
+  _auth(d) { this.token=d.token; this.email=d.email; this.workspaces=d.workspaces||[]; if(!this.active) this.activeWs=(this.workspaces[0]||{}).id||null; localStorage.setItem('tf.token',d.token); localStorage.setItem('tf.email',d.email); if(this.activeWs)localStorage.setItem('tf.ws',this.activeWs); this.status='on'; },
+  logout() { this.token=null; this.email=null; this.workspaces=[]; this.activeWs=null; localStorage.removeItem('tf.token'); localStorage.removeItem('tf.email'); localStorage.removeItem('tf.ws'); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
+  async refreshWorkspaces(){ try { const d=await this.api('/api/me'); this.workspaces=d.workspaces||[]; } catch(e){} },
+  async enterWorkspace() {
+    const a = this.active; if(!a){ this.status='error'; return; }
+    this.activeWs=a.id; localStorage.setItem('tf.ws',a.id);
+    let remote=null; try { remote = await this.api('/api/workspaces/'+a.id+'/state'); } catch(e){ remote=null; }
+    if (remote && remote.state) { this._suppress=true; state = migrate(remote.state); _origPersist(); this._suppress=false; applyAccent(state.settings.accent,state.settings.themePreset); applyTheme(); render(); toast('☁ Opened “'+a.name+'”'); }
+    else { await this.push(true); toast('☁ Synced “'+a.name+'”'); }
     this.connectWS();
   },
-  schedulePush() {
-    if (!this.on || this._suppress) return;
-    clearTimeout(this._pushTimer);
-    this._pushTimer = setTimeout(()=>this.push(), 800);
-  },
-  async push(immediate) {
-    if (!this.on) return;
-    try { await this.api('/api/state',{method:'PUT',body:JSON.stringify({state, clientId:this.clientId})}); this.status='on'; }
-    catch(e){ this.status='error'; if(e.message&&/auth/i.test(e.message)){ /* token expired */ } }
-  },
-  async pull() {
-    if (!this.on) return;
-    try { const d = await this.api('/api/state'); if (d && d.state) { this._suppress=true; state=migrate(d.state); _origPersist(); this._suppress=false; render(); } } catch(e){}
-  },
+  async switchWorkspace(id) { this.activeWs=id; localStorage.setItem('tf.ws',id); if(this.ws){try{this.ws.close();}catch(e){}} await this.enterWorkspace(); },
+  async createWorkspace(name) { const d=await this.api('/api/workspaces',{method:'POST',body:JSON.stringify({name})}); await this.refreshWorkspaces(); await this.switchWorkspace(d.workspace.id); return d.workspace; },
+  async invite() { const a=this.active; if(!a) return null; const d=await this.api('/api/workspaces/'+a.id+'/invite',{method:'POST',body:'{}'}); return d.code; },
+  async join(code) { const d=await this.api('/api/join',{method:'POST',body:JSON.stringify({code})}); await this.refreshWorkspaces(); await this.switchWorkspace(d.workspace.id); return d.workspace; },
+  async members() { const a=this.active; if(!a) return []; try { const d=await this.api('/api/workspaces/'+a.id+'/members'); return d.members||[]; } catch(e){ return []; } },
+  schedulePush() { if (!this.on || this._suppress) return; clearTimeout(this._pushTimer); this._pushTimer = setTimeout(()=>this.push(), 800); },
+  async push() { const a=this.active; if(!a) return; try { await this.api('/api/workspaces/'+a.id+'/state',{method:'PUT',body:JSON.stringify({state, clientId:this.clientId})}); this.status='on'; } catch(e){ this.status='error'; } },
+  async pull() { const a=this.active; if(!a) return; try { const d=await this.api('/api/workspaces/'+a.id+'/state'); if(d&&d.state){ this._suppress=true; state=migrate(d.state); _origPersist(); this._suppress=false; render(); } } catch(e){} },
   connectWS() {
-    if (!this.on || !('WebSocket' in window)) return;
+    const a=this.active; if (!this.on || !a || !('WebSocket' in window)) return;
     try {
       const proto = location.protocol==='https:'?'wss':'ws';
-      this.ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(this.token)}&clientId=${encodeURIComponent(this.clientId)}`);
+      this.ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(this.token)}&workspace=${encodeURIComponent(a.id)}&clientId=${encodeURIComponent(this.clientId)}`);
       this.ws.onmessage = (e)=>{ try{ const m=JSON.parse(e.data); if(m.type==='update') this.pull(); }catch(_){} };
       this.ws.onclose = ()=>{ this.ws=null; if(this.on) setTimeout(()=>this.connectWS(), 4000); };
     } catch(e){}
@@ -3002,8 +3000,16 @@ function syncBoxHtml() {
   if (location.protocol === 'file:') return `<div class="sync-note">Open the app from your Railway URL (https://…railway.app) to enable cloud sync. On <code>file://</code> it stays local-only.</div>`;
   if (SYNC.on) {
     const dot = SYNC.status==='error'?'#ef4444':'#10b981';
-    return `<div class="sync-on"><span class="sync-dot" style="background:${dot}"></span> Signed in as <b>${esc(SYNC.email)}</b> · syncing across your devices in real time.
-      <button class="btn ghost" id="sync-logout" style="margin-top:8px">Log out</button></div>`;
+    const wsOpts = (SYNC.workspaces||[]).map(w=>`<option value="${w.id}" ${w.id===SYNC.activeWs?'selected':''}>${esc(w.name)} (${w.members}👤)</option>`).join('');
+    return `<div class="sync-on"><span class="sync-dot" style="background:${dot}"></span> Signed in as <b>${esc(SYNC.email)}</b> · live sync on.
+      <div class="field" style="margin:10px 0 6px"><label>Active workspace</label>
+        <div style="display:flex;gap:6px"><select id="sync-ws" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">${wsOpts}</select>
+        <button class="btn ghost" id="sync-newws" title="New workspace">＋</button></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+        <button class="btn ghost" id="sync-invite">🔗 Invite people</button>
+        <button class="btn ghost" id="sync-join">🤝 Join with code</button>
+        <button class="btn ghost" id="sync-logout">Log out</button></div>
+      <div id="sync-invite-out" class="sync-note"></div></div>`;
   }
   return `<div class="sync-form">
       <input type="email" id="sync-email" placeholder="you@email.com" autocomplete="username">
@@ -3021,12 +3027,25 @@ function wireSyncBox() {
     try{ await fn(email,pass); refresh(); render(); }catch(e){ if(err)err.textContent=e.message||'Failed'; } };
   const li=$('#sync-login'); if(li) li.onclick=()=>run((e,p)=>SYNC.login(e,p));
   const su=$('#sync-signup'); if(su) su.onclick=()=>run((e,p)=>SYNC.signup(e,p));
+  // workspace controls
+  const sel=$('#sync-ws'); if(sel) sel.onchange=async()=>{ await SYNC.switchWorkspace(sel.value); refresh(); render(); };
+  const nw=$('#sync-newws'); if(nw) nw.onclick=async()=>{ const n=prompt('New workspace name','Team workspace'); if(n){ try{ await SYNC.createWorkspace(n.trim()); refresh(); render(); }catch(e){ toast('Failed: '+e.message); } } };
+  const inv=$('#sync-invite'); if(inv) inv.onclick=async()=>{ try{ const code=await SYNC.invite(); const url=location.origin+location.pathname+'?join='+code; const out=$('#sync-invite-out'); if(out) out.innerHTML=`Share this link — anyone who opens it and logs in joins this workspace:<br><b style="word-break:break-all">${esc(url)}</b>`; copyText(url); }catch(e){ toast('Failed: '+e.message); } };
+  const jn=$('#sync-join'); if(jn) jn.onclick=async()=>{ const c=prompt('Enter invite code'); if(c){ try{ const w=await SYNC.join(c.trim()); toast('🤝 Joined “'+w.name+'”'); refresh(); render(); }catch(e){ toast('Join failed: '+e.message); } } };
 }
 function initSync() {
   // Only attempt when served from a backend origin (http/https), not file://
   if (SYNC.on && location.protocol.startsWith('http')) {
-    SYNC.api('/api/health').then(()=>{ SYNC.status='on'; SYNC.firstSync(); }).catch(()=>{ SYNC.status='off'; });
-  }
+    SYNC.api('/api/health').then(async ()=>{
+      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; await SYNC.enterWorkspace(); handleJoinParam(); }
+      catch(e){ SYNC.status='off'; }
+    }).catch(()=>{ SYNC.status='off'; });
+  } else { handleJoinParam(); }
+}
+function handleJoinParam() {
+  const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;
+  if (!SYNC.on) { toast('Open ⚙ Settings → Cloud sync and log in to join this shared workspace'); return; }
+  SYNC.join(m[1]).then(w=>{ toast('🤝 Joined “'+w.name+'”'); history.replaceState(null,'',location.pathname); render(); }).catch(e=>toast('Join failed: '+e.message));
 }
 
 // ============================================================
