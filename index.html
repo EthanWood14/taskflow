@@ -568,12 +568,49 @@
   .qa-mic.listening { background:var(--p1); color:#fff; animation:pulse 1s infinite; }
   @keyframes pulse { 0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,.5);} 50%{ box-shadow:0 0 0 8px rgba(239,68,68,0);} }
 
+  /* ===== Day budget (planner) ===== */
+  .budget { background:var(--bg-alt); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:14px; }
+  .budget-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; flex-wrap:wrap; }
+  .budget-bar { height:9px; background:var(--hover); border-radius:6px; overflow:hidden; }
+  .budget-fill { height:100%; background:var(--brand-grad); border-radius:6px; transition:width .4s; }
+  .budget-fill.over { background:linear-gradient(135deg,var(--p2),var(--p1)); }
+  .budget-warn { color:var(--p1); font-size:12px; margin-top:7px; }
+
+  /* ===== Folders ===== */
+  .folder-item { display:flex; align-items:center; gap:8px; padding:8px 10px 8px 6px; border-radius:11px; cursor:default; color:var(--text-dim); font-weight:600; font-size:13px; }
+  .folder-item:hover { background:var(--hover); }
+  .folder-item .label { flex:1; cursor:pointer; color:var(--text); }
+  .folder-item .ico { font-size:14px; }
+  .folder-item .icon-btn { width:26px; height:26px; }
+  .folder-children { margin-left:14px; border-left:2px solid var(--border); padding-left:4px; }
+
+  /* ===== Templates ===== */
+  .tpl-row { display:flex; align-items:center; gap:10px; padding:11px 0; border-bottom:1px solid var(--border); }
+  .tpl-info { flex:1; display:flex; flex-direction:column; }
+  .tpl-meta { font-size:12px; color:var(--text-faint); }
+
+  /* ===== Weekly Review ===== */
+  .wr-title { font-size:19px; font-weight:800; margin-bottom:10px; }
+  .wr-prog { height:6px; background:var(--hover); border-radius:4px; overflow:hidden; margin-bottom:16px; }
+  .wr-prog div { height:100%; background:var(--brand-grad); transition:width .3s; }
+  .wr-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); }
+  .wr-acts { display:flex; gap:5px; flex-shrink:0; }
+  .wr-acts button { padding:5px 10px; border-radius:8px; background:var(--hover); font-weight:600; font-size:12.5px; }
+  .wr-acts button:hover { background:var(--accent-soft); }
+  .wr-old { color:var(--text-faint); font-size:12px; }
+  .wr-empty { color:var(--text-faint); padding:24px; text-align:center; }
+  .wr-cele { text-align:center; padding:14px; }
+  .wr-big { font-size:48px; font-weight:800; background:var(--brand-grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .wr-winlist { margin-top:14px; display:flex; flex-direction:column; gap:4px; }
+  .wr-win { color:var(--text-dim); font-size:13px; }
+
   @media (max-width: 820px) {
     .mx-grid { grid-template-columns:1fr; }
     .cal-cell { min-height:64px; }
     .cal-chip { font-size:10px; }
     .bulk-bar { bottom:74px; }
     #focus-bar { right:10px; bottom:74px; }
+    .wr-row { flex-direction:column; align-items:flex-start; gap:6px; }
   }
 </style>
 </head>
@@ -642,10 +679,14 @@ function nextWeekday(target, fromToday=true) {
 // Returns {title, date, time, priority, recurrence, labelNames[]}
 function parseQuickAdd(raw) {
   let text = ' ' + raw + ' ';
-  const res = { title:'', date:null, time:null, priority:4, recurrence:null, labelNames:[] };
+  const res = { title:'', date:null, time:null, priority:4, recurrence:null, labelNames:[], estimate:null };
 
   // labels @label
   text = text.replace(/\s@([\w-]+)/g, (m,l)=>{ res.labelNames.push(l); return ' '; });
+
+  // estimate: ~30m, ~1h, ~1h30m, est 45m
+  text = text.replace(/\s(?:~|est\s+)(\d+)\s*h(?:\s*(\d+)\s*m)?\b/i, (m,h,mm)=>{ res.estimate = (+h)*60 + (mm?+mm:0); return ' '; });
+  text = text.replace(/\s(?:~|est\s+)(\d+)\s*m(?:in)?\b/i, (m,mm)=>{ if(res.estimate==null) res.estimate = +mm; return ' '; });
 
   // priority p1..p4 or !!1
   text = text.replace(/\s[!p]([1-4])\b/i, (m,n)=>{ res.priority = +n; return ' '; });
@@ -732,15 +773,19 @@ function load() { try { const r = localStorage.getItem(STORE_KEY); return r? JSO
 // Backfill fields added in later versions so old saves keep working.
 function migrate(s) {
   if (!s) return null;
-  s.settings = Object.assign({ theme:'light', userName:'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false }, s.settings||{});
+  s.settings = Object.assign({ theme:'light', userName:'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null }, s.settings||{});
   s.stats = Object.assign({ xp:0, level:1, streak:0, longestStreak:0, lastActiveDate:null, totalCompleted:0 }, s.stats||{});
   s.activity = s.activity || {};          // { 'YYYY-MM-DD': count }
   s.achievements = s.achievements || {};  // { achId: timestamp }
   s.filters = s.filters || [];
+  s.templates = s.templates || [];        // [{id,name,color,view,sections:[],tasks:[]}]
+  s.folders = s.folders || [];            // [{id,name,order,collapsed}]
   (s.tasks||[]).forEach(t=>{
     if (t.dependsOn===undefined) t.dependsOn = [];
     if (t.timeSpent===undefined) t.timeSpent = 0;   // seconds
+    if (t.estimate===undefined) t.estimate = null;  // minutes
   });
+  (s.projects||[]).forEach(p=>{ if(p.folderId===undefined) p.folderId=null; });
   return s; // accent applied during init (after THEME_PRESETS is defined)
 }
 
@@ -753,7 +798,7 @@ function seed() {
   const secDone = { id: uid('sec'), projectId: pWork.id, name:'Done', order:2 };
   const lUrgent = { id: uid('lbl'), name:'urgent', color:'#dc4c3e' };
   const lHome = { id: uid('lbl'), name:'home', color:'#7ecc49' };
-  const t = (o) => Object.assign({ id:uid('task'), projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0 }, o);
+  const t = (o) => Object.assign({ id:uid('task'), projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0, estimate:null }, o);
   const tasks = [
     t({ title:'Welcome to TaskFlow 👋 — click me to see details', description:'This is a full task detail view. You can edit everything here: description, priority, due date, labels, subtasks, and comments.', projectId:'inbox', priority:1, dueDate: todayStr(), order:0 }),
     t({ title:'Try the natural-language Quick Add', description:'Press "q" or click + Add task. Type: "Email Sam tomorrow at 9am p1 @urgent"', projectId:'inbox', priority:2, dueDate: todayStr(), order:1, labels:[lUrgent.id] }),
@@ -770,10 +815,12 @@ function seed() {
     tasks,
     comments: [],
     filters: [ { id: uid('flt'), name:'Priority 1', color:'#dc4c3e', query:'p1' }, { id: uid('flt'), name:'No date', color:'#808080', query:'no date' } ],
-    settings: { theme: 'light', userName: 'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false },
+    settings: { theme: 'light', userName: 'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null },
     stats: { xp:0, level:1, streak:0, longestStreak:0, lastActiveDate:null, totalCompleted:0 },
     activity: {},
     achievements: {},
+    templates: [],
+    folders: [],
   };
 }
 
@@ -804,7 +851,7 @@ function renderSidebar() {
   sb.classList.toggle('collapsed', ui.sidebarCollapsed);
   const c = counts();
   const navActive = (v,extra) => (ui.view===v && (extra===undefined || extra)) ? 'active':'';
-  const projItems = activeProjects().map(p => {
+  const projNav = p => {
     const n = projectTasks(p.id).filter(t=>!t.completed).length;
     return `<div class="nav-item ${ui.view==='project'&&ui.projectId===p.id?'active':''}" data-proj="${p.id}">
       <span class="proj-dot" style="background:${p.color}"></span>
@@ -812,7 +859,21 @@ function renderSidebar() {
       ${n?`<span class="count">${n}</span>`:''}
       <span class="icon-btn proj-menu" data-projmenu="${p.id}" title="Project menu">⋯</span>
     </div>`;
-  }).join('');
+  };
+  const all = activeProjects();
+  const ungrouped = all.filter(p=>!p.folderId);
+  const folders = (state.folders||[]).slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  let projItems = ungrouped.map(projNav).join('');
+  for (const f of folders) {
+    const fp = all.filter(p=>p.folderId===f.id);
+    projItems += `<div class="folder-item ${ui.view==='project'&&fp.some(p=>p.id===ui.projectId)?'':''}">
+        <span class="caret ${f.collapsed?'collapsed':''}" data-foldercaret="${f.id}">▾</span>
+        <span class="ico">📁</span><span class="label" data-foldercaret="${f.id}">${esc(f.name)}</span>
+        <span class="count">${fp.length}</span>
+        <span class="icon-btn" data-foldermenu="${f.id}" title="Folder menu">⋯</span>
+      </div>
+      <div class="folder-children" style="${f.collapsed?'display:none':''}">${fp.map(projNav).join('')||'<div class="nav-item" style="color:var(--text-faint);font-size:12px">empty</div>'}</div>`;
+  }
   const labelItems = state.labels.map(l => `
     <div class="nav-item ${ui.view==='label'&&ui.labelName===l.name?'active':''}" data-label="${esc(l.name)}">
       <span class="ico" style="color:${l.color}">🏷</span>
@@ -850,10 +911,13 @@ function renderSidebar() {
       <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
       <div class="nav-item ${navActive('stats')}" data-view="stats"><span class="ico">📊</span><span class="label">Stats</span></div>
       <div class="nav-item ${navActive('achievements')}" data-view="achievements"><span class="ico">🏅</span><span class="label">Achievements</span>${achUnlockedCount()?`<span class="count">${achUnlockedCount()}/${ACHIEVEMENTS.length}</span>`:''}</div>
+      <div class="nav-item" data-act="weekly-review"><span class="ico">🔄</span><span class="label">Weekly Review</span></div>
+      <div class="nav-item" data-act="open-templates"><span class="ico">📋</span><span class="label">Templates</span>${(state.templates||[]).length?`<span class="count">${state.templates.length}</span>`:''}</div>
 
       <div class="sb-section-head">
         <span class="caret ${secCol('projects')}" data-caret="projects">▾</span>
         <span>Projects</span><span class="spacer"></span>
+        <button class="icon-btn" data-act="add-folder" title="Add folder">🗀</button>
         <button class="icon-btn" data-act="add-project" title="Add project">+</button>
       </div>
       <div data-group="projects" style="${ui.collapsedSections.projects?'display:none':''}">${projItems || '<div class="nav-item" style="color:var(--text-faint)">No projects</div>'}</div>
@@ -896,6 +960,7 @@ function taskMetaHtml(t) {
   if (!t.completed && isBlocked(t)) bits.push(`<span class="meta-chip blocked">🔒 Blocked</span>`);
   const subs = subtasks(t.id);
   if (subs.length) bits.push(`<span class="subcount">☑ ${subs.filter(s=>s.completed).length}/${subs.length}</span>`);
+  if (t.estimate) bits.push(`<span class="meta-chip">~${esc(fmtEst(t.estimate))}</span>`);
   if (t.timeSpent) bits.push(`<span class="meta-chip">⏱ ${fmtDuration(t.timeSpent)}</span>`);
   const cc = taskComments(t.id).length;
   if (cc) bits.push(`<span class="meta-chip">💬 ${cc}</span>`);
@@ -948,19 +1013,40 @@ function sortTasks(arr) {
   });
 }
 
+// Compound natural-language query: clauses joined by '&' (AND) and '|' (OR within a clause).
+// Tokens: p1..p4, overdue, today, tomorrow, this week, no date, has date, recurring,
+//   blocked, completed/done, @label, project:Name / in:Name, due before X, due after X, plain text.
 function matchesQuery(t, q) {
-  q = q.trim().toLowerCase();
+  q = (q||'').trim().toLowerCase();
   if (!q) return true;
-  if (q==='p1') return t.priority===1;
-  if (q==='p2') return t.priority===2;
-  if (q==='p3') return t.priority===3;
-  if (q==='p4') return t.priority===4;
-  if (q==='no date'||q==='no due date') return !t.dueDate;
-  if (q==='overdue') return t.dueDate && dayDiff(t.dueDate,todayStr())<0 && !t.completed;
-  if (q==='today') return t.dueDate && dayDiff(t.dueDate,todayStr())===0;
-  if (q.startsWith('@')) return t.labels.some(id=>{const l=getLabel(id);return l&&l.name.toLowerCase()===q.slice(1);});
-  return (t.title+' '+t.description).toLowerCase().includes(q);
+  return q.split('&').every(part => part.split('|').some(c => clauseMatch(t, c.trim())));
 }
+function parseDatePhrase(s){ try { return parseQuickAdd(' '+s+' ').date; } catch(e){ return null; } }
+function clauseMatch(t, c) {
+  if (!c) return true;
+  let m;
+  if (c==='p1') return t.priority===1;
+  if (c==='p2') return t.priority===2;
+  if (c==='p3') return t.priority===3;
+  if (c==='p4') return t.priority===4;
+  if (c==='no date'||c==='no due date'||c==='nodate') return !t.dueDate;
+  if (c==='has date'||c==='scheduled') return !!t.dueDate;
+  if (c==='overdue') return t.dueDate && dayDiff(t.dueDate,todayStr())<0 && !t.completed;
+  if (c==='today') return t.dueDate && dayDiff(t.dueDate,todayStr())===0;
+  if (c==='tomorrow') return t.dueDate===addDays(todayStr(),1);
+  if (c==='this week'||c==='week') return t.dueDate && dayDiff(t.dueDate,todayStr())>=0 && dayDiff(t.dueDate,todayStr())<7;
+  if (c==='recurring') return !!t.recurrence;
+  if (c==='blocked') return isBlocked(t);
+  if (c==='completed'||c==='done') return !!t.completed;
+  if (c==='has estimate'||c==='estimated') return !!t.estimate;
+  if (c.startsWith('@')) return t.labels.some(id=>{const l=getLabel(id);return l&&l.name.toLowerCase()===c.slice(1);});
+  if ((m=c.match(/^(?:project|in|#)[:\s]?\s*(.+)$/))) { const p=getProject(t.projectId); return p && p.name.toLowerCase().includes(m[1].trim()); }
+  if ((m=c.match(/^due\s+before\s+(.+)$/))||(m=c.match(/^before\s+(.+)$/))) { const d=parseDatePhrase(m[1]); return d && t.dueDate && t.dueDate < d; }
+  if ((m=c.match(/^due\s+after\s+(.+)$/))||(m=c.match(/^after\s+(.+)$/))) { const d=parseDatePhrase(m[1]); return d && t.dueDate && t.dueDate > d; }
+  if ((m=c.match(/^due\s+(.+)$/))) { const d=parseDatePhrase(m[1]); return d && t.dueDate===d; }
+  return (t.title+' '+t.description).toLowerCase().includes(c);
+}
+function fmtEst(min){ if(!min) return ''; const h=Math.floor(min/60), m=min%60; return (h?h+'h':'')+(m?(h?' ':'')+m+'m':'')||'0m'; }
 
 function renderMain() {
   const m = $('#main');
@@ -1266,7 +1352,7 @@ function runImport(jsonText, replace) {
       completed: !!raw.completed,
       completedAt: raw.completed?Date.now():null,
       createdAt: Date.now(),
-      dependsOn: [], timeSpent: 0,
+      dependsOn: [], timeSpent: 0, estimate: (typeof raw.estimate==='number'?raw.estimate:null),
       order: state.tasks.filter(x=>x.projectId===(proj?proj.id:'inbox')&&!x.parentId).length,
     };
     state.tasks.push(t);
@@ -1465,7 +1551,7 @@ function addTaskFromParse(parsed, projId, sectionId, parentId=null) {
     if (!l){ l={id:uid('lbl'),name:n,color:LABEL_COLORS[state.labels.length%LABEL_COLORS.length]}; state.labels.push(l); }
     return l.id;
   });
-  const t = { id:uid('task'), projectId: projId||'inbox', sectionId: sectionId||null, parentId, title:parsed.title||'Untitled', description:'', priority:parsed.priority||4, dueDate:parsed.date||null, dueTime:parsed.time||null, recurrence:parsed.recurrence||null, labels:labelIds, assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order: state.tasks.length, dependsOn:[], timeSpent:0 };
+  const t = { id:uid('task'), projectId: projId||'inbox', sectionId: sectionId||null, parentId, title:parsed.title||'Untitled', description:'', priority:parsed.priority||4, dueDate:parsed.date||null, dueTime:parsed.time||null, recurrence:parsed.recurrence||null, labels:labelIds, assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order: state.tasks.length, dependsOn:[], timeSpent:0, estimate:parsed.estimate||null };
   state.tasks.push(t); persist(); return t;
 }
 
@@ -1577,7 +1663,10 @@ function openTaskDetail(id) {
         <div class="field"><label>Project</label><select id="d-proj">${projOpts}</select></div>
         <div class="field"><label>Section</label><select id="d-sec">${secOpts}</select></div>
       </div>
-      <div class="field"><label>Assignee (optional)</label><input type="text" id="d-assignee" value="${esc(t.assignee||'')}" placeholder="Name"></div>
+      <div class="row2">
+        <div class="field"><label>Estimate (minutes)</label><input type="number" id="d-est" min="0" step="5" value="${t.estimate||''}" placeholder="e.g. 30"></div>
+        <div class="field"><label>Assignee (optional)</label><input type="text" id="d-assignee" value="${esc(t.assignee||'')}" placeholder="Name"></div>
+      </div>
       <div class="field"><label>Labels</label><div class="label-picker">${labelOpts || '<span style="color:var(--text-faint)">No labels yet — create one in the sidebar</span>'}</div></div>
 
       <div class="detail-section-title">Dependencies ${isBlocked(t)?'<span class="blocked-tag">🔒 Blocked</span>':''}</div>
@@ -1636,11 +1725,12 @@ function saveTaskDetail(id) {
   t.projectId = $('#d-proj').value;
   t.sectionId = $('#d-sec').value||null;
   t.assignee = $('#d-assignee').value.trim()||null;
+  const est = parseInt($('#d-est').value,10); t.estimate = (est>0?est:null);
   persist(); closeModal(); render(); toast('Saved');
 }
 
-function openProjectModal(existing) {
-  const p = existing || { name:'', color:PROJECT_COLORS[Math.floor(state.projects.length)%PROJECT_COLORS.length], view:'list' };
+function openProjectModal(existing, folderId) {
+  const p = existing || { name:'', color:PROJECT_COLORS[Math.floor(state.projects.length)%PROJECT_COLORS.length], view:'list', folderId: folderId||null };
   const swatches = PROJECT_COLORS.map(c=>`<span class="color-swatch" data-color="${c}" style="background:${c};width:24px;height:24px;cursor:pointer;outline:${c===p.color?'2px solid var(--text)':'none'};outline-offset:2px"></span>`).join('');
   modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">${existing?'Edit project':'New project'}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
@@ -1653,13 +1743,14 @@ function openProjectModal(existing) {
   let chosen = p.color;
   modalRoot.querySelectorAll('[data-color]').forEach(s=>s.addEventListener('click',()=>{ chosen=s.dataset.color; modalRoot.querySelectorAll('[data-color]').forEach(x=>x.style.outline='none'); s.style.outline='2px solid var(--text)'; }));
   modalRoot._chosenColor = ()=>chosen;
+  modalRoot._newFolderId = p.folderId||null;
   setTimeout(()=>$('#p-name').focus(),30);
 }
 function saveProject(id) {
   const name = $('#p-name').value.trim(); if(!name) return;
   const color = modalRoot._chosenColor(); const view = $('#p-view').value;
   if (id) { const p=getProject(id); p.name=name; p.color=color; p.view=view; }
-  else { state.projects.push({ id:uid('proj'), name, color, view, order:state.projects.length, archived:false }); }
+  else { state.projects.push({ id:uid('proj'), name, color, view, order:state.projects.length, archived:false, folderId: modalRoot._newFolderId||null }); }
   persist(); closeModal(); render();
 }
 
@@ -1687,8 +1778,8 @@ function openFilterModal(existing) {
   const f = existing || { name:'', color:'#808080', query:'' };
   modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">${existing?'Edit filter':'New filter'}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body"><div class="field"><label>Name</label><input type="text" id="f-name" value="${esc(f.name)}" placeholder="e.g. Priority 1"></div>
-    <div class="field"><label>Query</label><input type="text" id="f-query" value="${esc(f.query)}" placeholder="p1 | overdue | today | no date | @label | text"></div>
-    <div class="qa-hint">Supported: <code>p1</code>–<code>p4</code>, <code>overdue</code>, <code>today</code>, <code>no date</code>, <code>@label</code>, or any text.</div></div>
+    <div class="field"><label>Query</label><input type="text" id="f-query" value="${esc(f.query)}" placeholder="e.g. due before friday & p1 & @work"></div>
+    <div class="qa-hint">Combine with <code>&</code> (and) / <code>|</code> (or): <code>p1</code>–<code>p4</code>, <code>overdue</code>, <code>today</code>, <code>tomorrow</code>, <code>this week</code>, <code>no date</code>, <code>recurring</code>, <code>blocked</code>, <code>@label</code>, <code>project:Name</code>, <code>due before friday</code>, <code>due after jun 12</code>, or any text.</div></div>
     <div class="modal-foot">${existing?`<button class="btn danger" data-act="delete-filter" data-id="${existing.id}">Delete</button>`:''}<span style="flex:1"></span><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn primary" data-act="save-filter" data-id="${existing?existing.id:''}">Save</button></div></div></div>`;
   setTimeout(()=>$('#f-name').focus(),30);
 }
@@ -1756,12 +1847,27 @@ function taskRowMenu(id, x, y) {
 }
 function projectMenu(id, x, y) {
   const p = getProject(id);
+  const folderItems = (state.folders||[]).map(f=>({ label:(p.folderId===f.id?'✓ ':'')+'📁 '+f.name, fn:()=>{ p.folderId=f.id; persist(); render(); } }));
+  if (p.folderId) folderItems.push({ label:'⤴ Remove from folder', fn:()=>{ p.folderId=null; persist(); render(); } });
   showMenu(x,y,[
     {label:'Edit project', icon:'✎', fn:()=>openProjectModal(p)},
     {label: p.view==='board'?'Switch to List':'Switch to Board', icon:'▤', fn:()=>{ p.view=p.view==='board'?'list':'board'; persist(); render(); }},
     {label:'Add section', icon:'＋', fn:()=>openSectionPrompt(id)},
     'sep',
+    {label:'Save as template', icon:'📋', fn:()=>saveProjectAsTemplate(id)},
+    {label:'Share read-only link', icon:'🔗', fn:()=>shareProject(id)},
+    ...(folderItems.length?['sep',...folderItems]:[]),
+    'sep',
     {label:'Delete project', icon:'🗑', danger:true, fn:()=>{ if(confirm('Delete project and its tasks?')){ deleteProject(id); } }},
+  ]);
+}
+function folderMenu(id, x, y) {
+  const f = state.folders.find(x=>x.id===id); if(!f) return;
+  showMenu(x,y,[
+    {label:'Rename folder', icon:'✎', fn:()=>{ const n=prompt('Folder name', f.name); if(n){ f.name=n.trim(); persist(); render(); } }},
+    {label:'New project here', icon:'＋', fn:()=>openProjectModal(null, f.id)},
+    'sep',
+    {label:'Delete folder (keep projects)', icon:'🗑', danger:true, fn:()=>{ state.projects.forEach(p=>{ if(p.folderId===id)p.folderId=null; }); state.folders=state.folders.filter(x=>x.id!==id); persist(); render(); }},
   ]);
 }
 function sectionMenu(id, x, y) {
@@ -1792,16 +1898,21 @@ function wireSidebar() {
   sb.querySelectorAll('[data-label]').forEach(el=>el.onclick=()=>{ ui.view='label'; ui.labelName=el.dataset.label; ui.search=''; ui.mSearch=false; ui.drawerOpen=false; render(); });
   sb.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{ ui.view='filter'; ui.filterId=el.dataset.filter; ui.search=''; ui.mSearch=false; ui.drawerOpen=false; render(); });
   sb.querySelectorAll('[data-caret]').forEach(el=>el.onclick=()=>{ const k=el.dataset.caret; ui.collapsedSections[k]=!ui.collapsedSections[k]; renderSidebar(); wireSidebar(); });
+  sb.querySelectorAll('[data-foldercaret]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const f=state.folders.find(x=>x.id===el.dataset.foldercaret); if(f){ f.collapsed=!f.collapsed; persist(); renderSidebar(); wireSidebar(); } });
+  sb.querySelectorAll('[data-foldermenu]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); folderMenu(el.dataset.foldermenu, e.clientX, e.clientY); });
   sb.querySelectorAll('[data-act]').forEach(el=>el.onclick=(e)=>{
     e.stopPropagation();
     const a=el.dataset.act;
     if(a==='quick-add') openQuickAdd();
     else if(a==='add-project') openProjectModal();
+    else if(a==='add-folder') openFolderModal();
     else if(a==='add-label') openLabelModal();
     else if(a==='add-filter') openFilterModal();
     else if(a==='command-palette') openCommandPalette();
     else if(a==='open-settings') openSettings();
     else if(a==='open-stats') goView('stats');
+    else if(a==='weekly-review'){ ui.drawerOpen=false; openWeeklyReview(); }
+    else if(a==='open-templates'){ ui.drawerOpen=false; openTemplatePicker(); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
   });
@@ -1846,6 +1957,7 @@ function wireMain() {
     else if(a==='command-palette') openCommandPalette();
     else if(a==='open-settings') openSettings();
     else if(a==='open-stats') goView('stats');
+    else if(a==='plan-my-day') planMyDay();
   });
 
   // ----- Calendar -----
@@ -2130,7 +2242,8 @@ function plannerViewHtml() {
   }
   const tray = untimed.map(t=>`<div class="pl-chip" data-task="${t.id}" draggable="true">${esc(t.title)}</div>`).join('') || '<span style="color:var(--text-faint)">Nothing unscheduled 🎉</span>';
   return `<div class="view-title-row"><div class="view-title"><span class="emoji">⏰</span>Day Planner — Today</div></div>
-    <div class="view-sub">Drag an unscheduled task onto an hour to time-block it. Click an empty hour to add a task there.</div>
+    <div class="view-sub">Drag an unscheduled task onto an hour to time-block it, or hit <b>Plan My Day</b> to auto-schedule.</div>
+    ${dayBudgetHtml()}
     <div class="pl-tray-wrap"><div class="pl-tray-label">Unscheduled</div><div class="pl-tray" data-pltray>${tray}</div></div>
     <div class="pl-grid">${rows}</div>`;
 }
@@ -2280,6 +2393,10 @@ function openCommandPalette() {
     {icon:'📊', label:'Open Stats', run:()=>goView('stats')},
     {icon:'🏅', label:'Open Achievements', run:()=>goView('achievements')},
     {icon:'🍅', label:'Start Focus / Pomodoro', run:()=>openFocusPicker()},
+    {icon:'✨', label:'Plan My Day (auto-schedule)', run:()=>planMyDay()},
+    {icon:'🔄', label:'Weekly Review', run:()=>openWeeklyReview()},
+    {icon:'📋', label:'New project from template', run:()=>openTemplatePicker()},
+    {icon:'📁', label:'New folder', run:()=>openFolderModal()},
     {icon:'⚙', label:'Open Settings', run:()=>openSettings()},
     {icon:'🎨', label:'Change theme & accent', run:()=>openSettings()},
     {icon:'☾', label:'Toggle dark mode', run:()=>{ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); render(); }},
@@ -2378,6 +2495,9 @@ function openSettings() {
         <div class="seg" style="width:fit-content"><button class="${s.theme!=='dark'?'active':''}" data-settheme="light">☀ Light</button><button class="${s.theme==='dark'?'active':''}" data-settheme="dark">☾ Dark</button></div></div>
       <div class="field toggle-row"><label style="margin:0">🔊 Sound effects</label><input type="checkbox" id="set-sound" ${s.sound?'checked':''}></div>
       <div class="field toggle-row"><label style="margin:0">🔔 Due-task notifications</label><input type="checkbox" id="set-notif" ${s.notifications?'checked':''}></div>
+      <div class="field toggle-row"><label style="margin:0">↪ Auto carry-over overdue to today</label><input type="checkbox" id="set-carry" ${s.autoCarry?'checked':''}></div>
+      <div class="row2"><div class="field"><label>Day starts</label><input type="number" id="set-daystart" min="0" max="23" value="${s.dayStart}"></div>
+        <div class="field"><label>Day ends</label><input type="number" id="set-dayend" min="1" max="24" value="${s.dayEnd}"></div></div>
       <div class="field"><label>Your name (for comments)</label><input type="text" id="set-name" value="${esc(s.userName||'Me')}"></div>
       <div class="field"><label>Danger zone</label><button class="btn danger" id="set-reset">Reset all data</button></div>
     </div>
@@ -2388,11 +2508,204 @@ function openSettings() {
   $('#set-sound').onchange=e=>{ s.sound=e.target.checked; persist(); if(s.sound)playSound('complete'); };
   $('#set-notif').onchange=e=>{ if(e.target.checked){ requestNotifications(); } else { s.notifications=false; persist(); } };
   $('#set-name').onchange=e=>{ s.userName=e.target.value.trim()||'Me'; persist(); };
+  $('#set-carry').onchange=e=>{ s.autoCarry=e.target.checked; s.lastCarry=null; persist(); if(s.autoCarry){ maybeAutoCarry(); render(); } };
+  $('#set-daystart').onchange=e=>{ s.dayStart=Math.max(0,Math.min(23,+e.target.value||9)); persist(); };
+  $('#set-dayend').onchange=e=>{ s.dayEnd=Math.max(1,Math.min(24,+e.target.value||18)); persist(); };
   $('#set-reset').onclick=()=>{ if(confirm('Erase ALL tasks and progress? This cannot be undone.')){ localStorage.removeItem(STORE_KEY); state=seed(); applyAccent(state.settings.accent,state.settings.themePreset); persist(); closeModal(); render(); } };
 }
 function requestNotifications() {
   if (!('Notification' in window)) { toast('Notifications not supported here'); return; }
   Notification.requestPermission().then(p=>{ state.settings.notifications = (p==='granted'); persist(); toast(p==='granted'?'🔔 Notifications on':'Permission denied'); const cb=document.getElementById('set-notif'); if(cb)cb.checked=state.settings.notifications; });
+}
+
+// ============================================================
+//  FEATURE: Plan My Day (auto-scheduler) + day budget
+// ============================================================
+function planMyDay() {
+  const today = todayStr();
+  const start = state.settings.dayStart||9, end = state.settings.dayEnd||18;
+  // candidates: open, not blocked, due today or overdue or no date; skip already-timed today
+  let cands = state.tasks.filter(t=>!t.parentId && !t.completed && !isBlocked(t) &&
+    (!t.dueDate || dayDiff(t.dueDate,today)<=0))
+    .filter(t=>!(t.dueDate===today && t.dueTime));
+  cands.sort((a,b)=>(a.priority-b.priority) || ((b.estimate||30)-(a.estimate||30)));
+  let cursor = start*60;   // minutes from midnight
+  const endM = end*60; let placed=0, skipped=0;
+  for (const t of cands) {
+    const dur = Math.max(15, Math.min(180, t.estimate||30));
+    if (cursor + dur > endM) { skipped++; continue; }
+    const hh = String(Math.floor(cursor/60)).padStart(2,'0'), mm = String(cursor%60).padStart(2,'0');
+    t.dueDate = today; t.dueTime = `${hh}:${mm}`;
+    cursor += dur;
+    // round up to next 15 min
+    if (cursor%15) cursor += 15-(cursor%15);
+    placed++;
+  }
+  persist(); ui.view='planner'; render();
+  toast(`🗓️ Planned ${placed} task${placed===1?'':'s'} into your day` + (skipped?` · ${skipped} didn't fit`:''));
+  if (placed) { playSound('complete'); }
+}
+function dayBudgetHtml() {
+  const today = todayStr();
+  const todays = state.tasks.filter(t=>!t.parentId && !t.completed && t.dueDate===today);
+  const est = todays.reduce((s,t)=>s+(t.estimate||0),0);
+  const avail = ((state.settings.dayEnd||18)-(state.settings.dayStart||9))*60;
+  const pct = Math.min(100, Math.round(est/avail*100));
+  const over = est>avail;
+  return `<div class="budget"><div class="budget-top"><span><b>${todays.length}</b> tasks today · est <b>${fmtEst(est)||'0m'}</b> of ${fmtEst(avail)} available</span>
+    <button class="btn primary" data-act="plan-my-day" style="padding:6px 12px">✨ Plan My Day</button></div>
+    <div class="budget-bar"><div class="budget-fill ${over?'over':''}" style="width:${pct}%"></div></div>
+    ${over?`<div class="budget-warn">⚠ Over capacity by ${fmtEst(est-avail)} — consider rescheduling some tasks.</div>`:''}</div>`;
+}
+
+// ============================================================
+//  FEATURE: Auto carry-over overdue
+// ============================================================
+function maybeAutoCarry() {
+  if (!state.settings.autoCarry) return;
+  const today = todayStr();
+  if (state.settings.lastCarry === today) return;
+  let n=0;
+  state.tasks.forEach(t=>{ if(!t.completed && !t.parentId && t.dueDate && dayDiff(t.dueDate,today)<0 && !t.recurrence){ t.dueDate=today; n++; } });
+  state.settings.lastCarry = today;
+  persist();
+  if (n) setTimeout(()=>toast(`↪ Carried ${n} overdue task${n===1?'':'s'} to today`), 600);
+}
+
+// ============================================================
+//  FEATURE: Folders
+// ============================================================
+function openFolderModal(existing) {
+  const f = existing || { name:'' };
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">${existing?'Rename folder':'New folder'}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body"><div class="field"><label>Folder name</label><input type="text" id="folder-name" value="${esc(f.name)}" placeholder="e.g. Work areas"></div></div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn primary" id="folder-save">Save</button></div></div></div>`;
+  const inp=$('#folder-name');
+  const save=()=>{ const n=inp.value.trim(); if(!n) return; if(existing){ existing.name=n; } else { state.folders.push({ id:uid('fld'), name:n, order:state.folders.length, collapsed:false }); } persist(); closeModal(); render(); };
+  $('#folder-save').onclick=save; inp.addEventListener('keydown',e=>{ if(e.key==='Enter')save(); });
+  setTimeout(()=>inp.focus(),30);
+}
+
+// ============================================================
+//  FEATURE: Templates
+// ============================================================
+function saveProjectAsTemplate(projId) {
+  const p = getProject(projId); if(!p) return;
+  const secs = projectSections(projId).map(s=>s.name);
+  const tasks = projectTasks(projId).filter(t=>!t.completed).map(t=>({
+    title:t.title, priority:t.priority, estimate:t.estimate||null, description:t.description||'',
+    section:(state.sections.find(s=>s.id===t.sectionId)||{}).name||null,
+    labels:t.labels.map(id=>(getLabel(id)||{}).name).filter(Boolean)
+  }));
+  const name = prompt('Template name', p.name+' template'); if(!name) return;
+  state.templates.push({ id:uid('tpl'), name:name.trim(), color:p.color, view:p.view, sections:secs, tasks });
+  persist(); toast('📋 Saved as template');
+}
+function openTemplatePicker() {
+  const list = (state.templates||[]);
+  const rows = list.map(tpl=>`<div class="tpl-row"><div class="tpl-info"><b>${esc(tpl.name)}</b><span class="tpl-meta">${tpl.tasks.length} tasks · ${tpl.sections.length} sections · ${esc(tpl.view)}</span></div>
+    <button class="btn primary" data-usetpl="${tpl.id}" style="padding:6px 12px">Use</button>
+    <button class="icon-btn" data-deltpl="${tpl.id}" title="Delete template">🗑</button></div>`).join('');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">📋 Templates</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">${rows || '<div style="color:var(--text-faint)">No templates yet. Open a project → ⋯ → <b>Save as template</b>.</div>'}</div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button></div></div></div>`;
+  modalRoot.querySelectorAll('[data-usetpl]').forEach(el=>el.onclick=()=>createProjectFromTemplate(el.dataset.usetpl));
+  modalRoot.querySelectorAll('[data-deltpl]').forEach(el=>el.onclick=()=>{ state.templates=state.templates.filter(t=>t.id!==el.dataset.deltpl); persist(); openTemplatePicker(); });
+}
+function createProjectFromTemplate(tplId) {
+  const tpl = state.templates.find(t=>t.id===tplId); if(!tpl) return;
+  const proj = { id:uid('proj'), name:tpl.name.replace(/ template$/i,''), color:tpl.color||'#6d5dfc', view:tpl.view||'list', order:state.projects.length, archived:false, folderId:null };
+  state.projects.push(proj);
+  const secMap={};
+  (tpl.sections||[]).forEach((sn,i)=>{ const s={id:uid('sec'),projectId:proj.id,name:sn,order:i}; state.sections.push(s); secMap[sn]=s.id; });
+  (tpl.tasks||[]).forEach((tt,i)=>{
+    const labelIds=(tt.labels||[]).map(n=>{ let l=state.labels.find(x=>x.name.toLowerCase()===String(n).toLowerCase()); if(!l){l={id:uid('lbl'),name:n,color:LABEL_COLORS[state.labels.length%LABEL_COLORS.length]};state.labels.push(l);} return l.id; });
+    state.tasks.push({ id:uid('task'), projectId:proj.id, sectionId:tt.section?secMap[tt.section]||null:null, parentId:null, title:tt.title||'Untitled', description:tt.description||'', priority:[1,2,3,4].includes(tt.priority)?tt.priority:4, dueDate:null, dueTime:null, recurrence:null, labels:labelIds, assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:i, dependsOn:[], timeSpent:0, estimate:tt.estimate||null });
+  });
+  persist(); closeModal(); ui.view='project'; ui.projectId=proj.id; render(); toast('✨ Project created from template');
+}
+
+// ============================================================
+//  FEATURE: Shareable read-only link
+// ============================================================
+function b64enc(str){ return btoa(unescape(encodeURIComponent(str))); }
+function b64dec(str){ return decodeURIComponent(escape(atob(str))); }
+function shareProject(projId) {
+  const p = getProject(projId); if(!p) return;
+  const secById = {}; projectSections(projId).forEach(s=>secById[s.id]=s.name);
+  const payload = { v:1, project:{ name:p.name, color:p.color, view:p.view }, sections: projectSections(projId).map(s=>s.name),
+    tasks: projectTasks(projId).map(t=>({ title:t.title, priority:t.priority, dueDate:t.dueDate, dueTime:t.dueTime, completed:t.completed, estimate:t.estimate||null, description:t.description||'', section: t.sectionId?secById[t.sectionId]:null, labels:t.labels.map(id=>(getLabel(id)||{}).name).filter(Boolean) })) };
+  const url = location.origin + location.pathname + '#share=' + b64enc(JSON.stringify(payload));
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">🔗 Share “${esc(p.name)}”</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body"><div class="view-sub" style="padding-bottom:10px">Anyone with this link can view a read-only snapshot of this project (encoded in the URL — no server, no account). It won't update after you share it.</div>
+      <textarea class="import-area" id="share-url" readonly style="min-height:90px">${esc(url)}</textarea></div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button><button class="btn primary" id="share-copy">Copy link</button></div></div></div>`;
+  $('#share-copy').onclick=()=>copyText(url);
+  setTimeout(()=>{ const ta=$('#share-url'); ta.focus(); ta.select(); },30);
+}
+function handleShareHash() {
+  if (!location.hash.startsWith('#share=')) return;
+  let data; try { data = JSON.parse(b64dec(location.hash.slice(7))); } catch(e){ return; }
+  const p = data.project||{}; const tasks=data.tasks||[];
+  const bySec = {}; tasks.forEach(t=>{ const k=t.section||'__'; (bySec[k]=bySec[k]||[]).push(t); });
+  const order = [...(data.sections||[]), ...(bySec['__']?['__']:[])];
+  let rows='';
+  const renderT = t=>`<div class="task-row" style="cursor:default"><div class="checkbox ${t.priority<4?'p'+t.priority:''} ${t.completed?'done':''}">${t.completed?'✓':''}</div>
+    <div class="task-body"><div class="task-title" style="${t.completed?'text-decoration:line-through;color:var(--text-faint)':''}">${esc(t.title)}</div>
+    ${(t.dueDate||t.estimate||(t.labels||[]).length)?`<div class="task-meta">${t.dueDate?`<span class="meta-chip due">📅 ${esc(fmtDate(t.dueDate))}${t.dueTime?' '+esc(fmtTime(t.dueTime)):''}</span>`:''}${t.estimate?`<span class="meta-chip">~${esc(fmtEst(t.estimate))}</span>`:''}${(t.labels||[]).map(l=>`<span class="label-chip">🏷 ${esc(l)}</span>`).join('')}</div>`:''}</div></div>`;
+  for (const sn of order) { const arr=bySec[sn]; if(!arr||!arr.length) continue; if(sn!=='__') rows+=`<div class="task-group-head">${esc(sn)} <span class="gcount">${arr.length}</span></div>`; rows+=arr.map(renderT).join(''); }
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs"><span class="proj-dot" style="background:${p.color||'#6d5dfc'};display:inline-block"></span> Shared project (read-only)</div><button class="icon-btn" data-act="close-share">✕</button></div>
+    <div class="modal-body"><div class="view-title" style="margin-bottom:4px">${esc(p.name||'Shared project')}</div><div class="view-sub" style="padding-bottom:12px">${tasks.length} tasks · read-only snapshot</div>${rows||'<div style="color:var(--text-faint)">No tasks.</div>'}</div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-share">Close</button><button class="btn primary" id="share-import">⤓ Import into my TaskFlow</button></div></div></div>`;
+  modalRoot.querySelectorAll('[data-act="close-share"]').forEach(b=>b.onclick=()=>{ history.replaceState(null,'',location.pathname); closeModal(); });
+  $('#share-import').onclick=()=>{
+    const imp = { projects:[{ name:p.name||'Shared', color:p.color, view:p.view, sections:data.sections||[] }], tasks: tasks.map(t=>Object.assign({}, t, { project:p.name||'Shared' })) };
+    runImport(JSON.stringify(imp), false); history.replaceState(null,'',location.pathname); closeModal(); render(); toast('✓ Imported shared project');
+  };
+}
+
+// ============================================================
+//  FEATURE: Weekly Review wizard
+// ============================================================
+function openWeeklyReview() {
+  const today = todayStr();
+  const steps = [
+    { title:'📥 Process your Inbox', build:()=>{
+        const inbox = state.tasks.filter(t=>t.projectId==='inbox'&&!t.completed&&!t.parentId);
+        if(!inbox.length) return '<div class="wr-empty">Inbox is empty — nicely done! 🎉</div>';
+        return inbox.map(t=>`<div class="wr-row"><span>${esc(t.title)}</span><span class="wr-acts"><button data-wr-today="${t.id}">📅 Today</button><button data-wr-open="${t.id}">Open</button></span></div>`).join('');
+      } },
+    { title:'⏰ Reschedule overdue', build:()=>{
+        const od = state.tasks.filter(t=>!t.completed&&!t.parentId&&t.dueDate&&dayDiff(t.dueDate,today)<0);
+        if(!od.length) return '<div class="wr-empty">No overdue tasks. You\'re on top of it. ✨</div>';
+        return od.map(t=>`<div class="wr-row"><span>${esc(t.title)} <span class="wr-old">was ${esc(fmtDate(t.dueDate))}</span></span><span class="wr-acts"><button data-wr-today="${t.id}">Today</button><button data-wr-tom="${t.id}">Tomorrow</button><button data-wr-nodate="${t.id}">Someday</button></span></div>`).join('');
+      } },
+    { title:'✅ Wins this week', build:()=>{
+        const wk = state.tasks.filter(t=>t.completed&&t.completedAt&&(Date.now()-t.completedAt)<7*86400000);
+        const xpWk = wk.reduce((s,t)=>s+xpFor(t),0);
+        return `<div class="wr-cele"><div class="wr-big">${wk.length}</div><div>tasks completed in the last 7 days · ~${xpWk} XP</div><div style="margin-top:8px;color:var(--text-dim)">🔥 Current streak: ${state.stats.streak} days · Level ${state.stats.level}</div></div>` +
+          (wk.length?`<div class="wr-winlist">${wk.slice(0,12).map(t=>`<div class="wr-win">✓ ${esc(t.title)}</div>`).join('')}</div>`:'');
+      } },
+    { title:'🗓 The week ahead', build:()=>{
+        const up = state.tasks.filter(t=>!t.completed&&!t.parentId&&t.dueDate&&dayDiff(t.dueDate,today)>=0&&dayDiff(t.dueDate,today)<7).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+        if(!up.length) return '<div class="wr-empty">Nothing scheduled this week yet.</div>';
+        return up.map(t=>`<div class="wr-row"><span>${esc(t.title)}</span><span class="wr-old">${esc(fmtDate(t.dueDate))}</span></div>`).join('');
+      } },
+  ];
+  let i = 0;
+  function draw() {
+    const s = steps[i];
+    modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs">🔄 Weekly Review · Step ${i+1} of ${steps.length}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+      <div class="modal-body"><div class="wr-title">${s.title}</div><div class="wr-prog"><div style="width:${(i+1)/steps.length*100}%"></div></div><div class="wr-content">${s.build()}</div></div>
+      <div class="modal-foot"><button class="btn ghost" id="wr-back" ${i===0?'disabled':''}>Back</button><span style="flex:1"></span><button class="btn primary" id="wr-next">${i===steps.length-1?'Finish 🎉':'Next →'}</button></div></div></div>`;
+    modalRoot.querySelectorAll('[data-wr-today]').forEach(b=>b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.wrToday); if(t){t.dueDate=today;persist();draw();} });
+    modalRoot.querySelectorAll('[data-wr-tom]').forEach(b=>b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.wrTom); if(t){t.dueDate=addDays(today,1);persist();draw();} });
+    modalRoot.querySelectorAll('[data-wr-nodate]').forEach(b=>b.onclick=()=>{ const t=state.tasks.find(x=>x.id===b.dataset.wrNodate); if(t){t.dueDate=null;persist();draw();} });
+    modalRoot.querySelectorAll('[data-wr-open]').forEach(b=>b.onclick=()=>openTaskDetail(b.dataset.wrOpen));
+    $('#wr-back').onclick=()=>{ if(i>0){i--;draw();} };
+    $('#wr-next').onclick=()=>{ if(i<steps.length-1){i++;draw();} else { closeModal(); confettiBurst(); playSound('fanfare'); toast('🔄 Weekly review complete!'); render(); } };
+  }
+  draw();
 }
 
 // ============================================================
@@ -2475,7 +2788,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 applyTheme();
 applyAccent(state.settings.accent, state.settings.themePreset);
 checkNightOwl();
+maybeAutoCarry();
 render();
+handleShareHash();
 startNotificationLoop();
 window.addEventListener('beforeunload', persist);
 </script>

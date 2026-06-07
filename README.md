@@ -30,6 +30,19 @@ Double-click **`index.html`** (or right-click → Open with → your browser). T
 - **Bulk multi-select** — Ctrl/Shift-click to select, then complete/move/reschedule/delete in one go
 - **Voice quick-add** — dictate a task with the 🎤 button
 
+**Planning**
+- ✨ **Plan My Day** — auto-schedules today's tasks into time blocks by priority + estimate
+- **Time estimates** + a **day budget** bar (are you over capacity?)
+- **Auto carry-over** — roll unfinished overdue tasks to today (optional)
+- **Weekly Review wizard** — guided inbox/overdue/wins/week-ahead flow
+- **Smart filters** — compound queries like `due before friday & p1 & @work`
+
+**Organize**
+- **Task templates** — save a project skeleton, spin up copies instantly
+- **Folders** — group projects into collapsible folders
+- **Shareable read-only links** — encode a project into a URL (no server)
+- **Complete Forever** — finish a task and end its recurrence for good
+
 **Views**
 - **Calendar** (month) with drag-to-reschedule
 - **Priority Matrix** (Eisenhower) — drag tasks between Do / Schedule / Delegate / Eliminate
