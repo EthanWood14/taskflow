@@ -23,8 +23,32 @@ Double-click **`index.html`** (or right-click → Open with → your browser). T
 - **Board (Kanban)** view with drag-and-drop between columns, or List view — toggle per project
 - Assignees on tasks
 
+**Power features**
+- ⌘/Ctrl-K **command palette** — fuzzy-jump to any task, view, or action
+- **Pomodoro focus timer** with per-task time tracking + Focus mode
+- **Task dependencies** (blocked-by) — blocked tasks are flagged and can't be completed early
+- **Bulk multi-select** — Ctrl/Shift-click to select, then complete/move/reschedule/delete in one go
+- **Voice quick-add** — dictate a task with the 🎤 button
+
+**Views**
+- **Calendar** (month) with drag-to-reschedule
+- **Priority Matrix** (Eisenhower) — drag tasks between Do / Schedule / Delegate / Eliminate
+- **Day Planner** — hour-by-hour time-blocking for today
+- **Stats dashboard** — completions chart, per-project breakdown, activity heatmap
+
+**Gamification**
+- **Karma / XP / levels** and daily **streaks**
+- **Achievements** (12 unlockable badges)
+- **Activity heatmap** (GitHub-style)
+- **Confetti + sound** when you clear your day
+
+**Platform**
+- Installable **PWA** with offline support (service worker)
+- **Due-task notifications**
+- **Theme & accent customizer** (6 presets + custom accent)
+
 **Keyboard**
-- `q` — quick add · `/` — search · `Esc` — close
+- `q` quick add · `/` search · `⌘/Ctrl-K` command palette · `f` focus · `Esc` close
 
 ## Importing tasks (the "run myself through Claude" part)
 
