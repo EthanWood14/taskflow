@@ -10,10 +10,12 @@ This folder is also a **git repo** already committed and ready to push, with a
 
 ---
 
-## ⭐ Option R — Railway (recommended)
+## ⭐ Option R — Railway (recommended — now with a backend)
 
-TaskFlow ships with a `Dockerfile` (Caddy serving the static file on Railway's `$PORT`)
-and a `railway.json`, so Railway just builds and runs it.
+TaskFlow ships with a `Dockerfile` (Node server in `server/`) that adds **accounts,
+cross-device sync, real-time updates, and a REST API** — and also serves the app.
+**See [BACKEND.md](BACKEND.md) for the full backend setup** (add a Volume at `/data`
+and set `JWT_SECRET`). Quick version below; sync is optional and the app still works offline.
 
 ### Easiest: deploy from GitHub (browser only, no CLI)
 1. Push this folder to a GitHub repo (one-time):

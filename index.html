@@ -646,6 +646,15 @@
   .att-dl { text-decoration:none; color:var(--accent); font-weight:700; }
   .att-add { cursor:pointer; font-size:13px; }
 
+  /* ===== Cloud sync ===== */
+  .sync-form input { width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--bg); outline:none; margin-bottom:7px; }
+  .sync-form input:focus { border-color:var(--accent); }
+  .sync-note { font-size:11.5px; color:var(--text-faint); margin-top:8px; }
+  .sync-note code { background:var(--hover); padding:1px 5px; border-radius:4px; }
+  .sync-err { color:var(--p1); font-size:12px; margin-top:6px; }
+  .sync-on { font-size:13px; }
+  .sync-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+
   /* ===== Lock screen ===== */
   #lockscreen { position:fixed; inset:0; z-index:9999; background:var(--sidebar-grad); display:grid; place-items:center; }
   .lock-box { text-align:center; background:var(--bg); border:1px solid var(--border); border-radius:18px; padding:34px 40px; box-shadow:var(--shadow); }
@@ -2542,6 +2551,7 @@ function openCommandPalette() {
     {icon:'🔄', label:'Weekly Review', run:()=>openWeeklyReview()},
     {icon:'📋', label:'New project from template', run:()=>openTemplatePicker()},
     {icon:'📁', label:'New folder', run:()=>openFolderModal()},
+    {icon:'☁', label:'Cloud sync / account', run:()=>openSettings()},
     {icon:'⚙', label:'Open Settings', run:()=>openSettings()},
     {icon:'🎨', label:'Change theme & accent', run:()=>openSettings()},
     {icon:'☾', label:'Toggle dark mode', run:()=>{ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); render(); }},
@@ -2634,6 +2644,7 @@ function openSettings() {
   const accentSw = ['#6d5dfc','#0ea5b7','#f0653e','#2f9e44','#e64980','#475569','#e11d48','#0891b2','#7c3aed','#16a34a'].map(c=>`<span class="color-swatch" data-accent="${c}" style="background:${c};width:26px;height:26px;cursor:pointer;outline:${c===s.accent?'2px solid var(--text)':'none'};outline-offset:2px"></span>`).join('');
   modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">⚙ Settings</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
+      <div class="field"><label>☁ Cloud sync &amp; account</label><div id="sync-box">${syncBoxHtml()}</div></div>
       <div class="field"><label>Theme presets</label><div class="preset-row">${presetSw}</div></div>
       <div class="field"><label>Accent color</label><div style="display:flex;flex-wrap:wrap;gap:8px">${accentSw}</div></div>
       <div class="field"><label>Appearance</label>
@@ -2666,6 +2677,7 @@ function openSettings() {
   const off=$('#set-passcode-off'); if(off) off.onclick=()=>{ s.passcode=null; persist(); toast('Passcode removed'); openSettings(); };
   modalRoot.querySelectorAll('[data-act="manage-automations"]').forEach(b=>b.onclick=openAutomations);
   modalRoot.querySelectorAll('[data-act="manage-fields"]').forEach(b=>b.onclick=openCustomFields);
+  wireSyncBox();
   $('#set-carry').onchange=e=>{ s.autoCarry=e.target.checked; s.lastCarry=null; persist(); if(s.autoCarry){ maybeAutoCarry(); render(); } };
   $('#set-daystart').onchange=e=>{ s.dayStart=Math.max(0,Math.min(23,+e.target.value||9)); persist(); };
   $('#set-dayend').onchange=e=>{ s.dayEnd=Math.max(1,Math.min(24,+e.target.value||18)); persist(); };
@@ -2931,7 +2943,91 @@ function initRealtime() {
   window.addEventListener('storage', (e)=>{ if(e.key===STORE_KEY){ const s=load(); if(s){ state=migrate(s); render(); } } });
 }
 const _origPersist = persist;
-persist = function(){ _origPersist(); if(_bc){ try{ _bc.postMessage('update'); }catch(e){} } };
+persist = function(){ _origPersist(); if(_bc){ try{ _bc.postMessage('update'); }catch(e){} } if(window.SYNC) SYNC.schedulePush(); };
+
+// ============================================================
+//  FEATURE: Cloud sync (Railway backend) — accounts, cross-device, realtime
+// ============================================================
+const SYNC = {
+  token: localStorage.getItem('tf.token') || null,
+  email: localStorage.getItem('tf.email') || null,
+  clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
+  ws: null, status: 'off', _suppress: false, _pushTimer: null,
+  get on(){ return !!this.token; },
+  async api(path, opts={}) {
+    const headers = Object.assign({ 'Content-Type':'application/json' }, opts.headers||{});
+    if (this.token) headers['Authorization'] = 'Bearer '+this.token;
+    const res = await fetch(path, Object.assign({}, opts, { headers }));
+    let data=null; try { data = await res.json(); } catch(e){}
+    if (!res.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
+    return data;
+  },
+  async signup(email, password) { const d = await this.api('/api/signup',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.firstSync(); return d; },
+  async login(email, password) { const d = await this.api('/api/login',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.firstSync(); return d; },
+  _auth(d) { this.token=d.token; this.email=d.email; localStorage.setItem('tf.token',d.token); localStorage.setItem('tf.email',d.email); this.status='on'; },
+  logout() { this.token=null; this.email=null; localStorage.removeItem('tf.token'); localStorage.removeItem('tf.email'); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
+  async firstSync() {
+    // pull remote; if remote empty, seed it with local
+    let remote=null; try { remote = await this.api('/api/state'); } catch(e){ remote=null; }
+    if (remote && remote.state) { this._suppress=true; state = migrate(remote.state); _origPersist(); this._suppress=false; applyAccent(state.settings.accent,state.settings.themePreset); applyTheme(); render(); toast('☁ Synced from cloud'); }
+    else { await this.push(true); toast('☁ Cloud sync enabled'); }
+    this.connectWS();
+  },
+  schedulePush() {
+    if (!this.on || this._suppress) return;
+    clearTimeout(this._pushTimer);
+    this._pushTimer = setTimeout(()=>this.push(), 800);
+  },
+  async push(immediate) {
+    if (!this.on) return;
+    try { await this.api('/api/state',{method:'PUT',body:JSON.stringify({state, clientId:this.clientId})}); this.status='on'; }
+    catch(e){ this.status='error'; if(e.message&&/auth/i.test(e.message)){ /* token expired */ } }
+  },
+  async pull() {
+    if (!this.on) return;
+    try { const d = await this.api('/api/state'); if (d && d.state) { this._suppress=true; state=migrate(d.state); _origPersist(); this._suppress=false; render(); } } catch(e){}
+  },
+  connectWS() {
+    if (!this.on || !('WebSocket' in window)) return;
+    try {
+      const proto = location.protocol==='https:'?'wss':'ws';
+      this.ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(this.token)}&clientId=${encodeURIComponent(this.clientId)}`);
+      this.ws.onmessage = (e)=>{ try{ const m=JSON.parse(e.data); if(m.type==='update') this.pull(); }catch(_){} };
+      this.ws.onclose = ()=>{ this.ws=null; if(this.on) setTimeout(()=>this.connectWS(), 4000); };
+    } catch(e){}
+  },
+};
+window.SYNC = SYNC;
+function syncBoxHtml() {
+  if (location.protocol === 'file:') return `<div class="sync-note">Open the app from your Railway URL (https://…railway.app) to enable cloud sync. On <code>file://</code> it stays local-only.</div>`;
+  if (SYNC.on) {
+    const dot = SYNC.status==='error'?'#ef4444':'#10b981';
+    return `<div class="sync-on"><span class="sync-dot" style="background:${dot}"></span> Signed in as <b>${esc(SYNC.email)}</b> · syncing across your devices in real time.
+      <button class="btn ghost" id="sync-logout" style="margin-top:8px">Log out</button></div>`;
+  }
+  return `<div class="sync-form">
+      <input type="email" id="sync-email" placeholder="you@email.com" autocomplete="username">
+      <input type="password" id="sync-pass" placeholder="password (6+ chars)" autocomplete="current-password">
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn primary" id="sync-login">Log in</button><button class="btn ghost" id="sync-signup">Create account</button></div>
+      <div class="sync-err" id="sync-err"></div>
+      <div class="sync-note">Optional — sign up to sync your tasks across devices with live updates. Your data stays local until you do.</div>
+    </div>`;
+}
+function wireSyncBox() {
+  const refresh=()=>{ const box=$('#sync-box'); if(box){ box.innerHTML=syncBoxHtml(); wireSyncBox(); } };
+  const lo=$('#sync-logout'); if(lo) lo.onclick=()=>{ SYNC.logout(); refresh(); };
+  const err=$('#sync-err');
+  const run=async(fn)=>{ const email=$('#sync-email').value.trim(), pass=$('#sync-pass').value; if(err)err.textContent='';
+    try{ await fn(email,pass); refresh(); render(); }catch(e){ if(err)err.textContent=e.message||'Failed'; } };
+  const li=$('#sync-login'); if(li) li.onclick=()=>run((e,p)=>SYNC.login(e,p));
+  const su=$('#sync-signup'); if(su) su.onclick=()=>run((e,p)=>SYNC.signup(e,p));
+}
+function initSync() {
+  // Only attempt when served from a backend origin (http/https), not file://
+  if (SYNC.on && location.protocol.startsWith('http')) {
+    SYNC.api('/api/health').then(()=>{ SYNC.status='on'; SYNC.firstSync(); }).catch(()=>{ SYNC.status='off'; });
+  }
+}
 
 // ============================================================
 //  FEATURE: Goals
@@ -3228,6 +3324,7 @@ render();
 handleShareHash();
 if (state.settings.passcode) showLockScreen();
 startNotificationLoop();
+initSync();
 window.addEventListener('beforeunload', persist);
 </script>
 </body>

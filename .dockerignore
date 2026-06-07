@@ -1,0 +1,8 @@
+deploy/
+taskflow-site.zip
+serve.ps1
+.claude/
+Caddyfile
+**/node_modules
+**/data
+*.md

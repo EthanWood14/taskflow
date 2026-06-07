@@ -1,12 +1,21 @@
-# TaskFlow — static site served by Caddy. Works on Railway, Fly, Render, any container host.
-FROM caddy:2-alpine
+# TaskFlow — Node backend (accounts, sync, realtime, API) that also serves the static app.
+FROM node:20-alpine
+WORKDIR /app
 
-COPY Caddyfile /etc/caddy/Caddyfile
-COPY index.html /usr/share/caddy/index.html
-COPY manifest.webmanifest /usr/share/caddy/manifest.webmanifest
-COPY sw.js /usr/share/caddy/sw.js
+# Install server deps first (better layer caching)
+COPY server/package.json ./
+RUN npm install --omit=dev
 
-# Railway sets $PORT at runtime; the Caddyfile reads it. Expose for clarity.
-EXPOSE 8777
+# Server code
+COPY server/server.js ./
 
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+# Static app, served from /app/public
+COPY index.html manifest.webmanifest sw.js ./public/
+
+ENV PUBLIC_DIR=/app/public
+ENV DATA_DIR=/data
+# Railway injects PORT; default for local runs:
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["node", "server.js"]
