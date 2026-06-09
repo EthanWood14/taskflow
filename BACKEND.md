@@ -56,9 +56,12 @@ cd server && npm install && PUBLIC_DIR=.. DATA_DIR=./data node server.js
 | Method | Path                              | Auth | Body                   | Returns                         |
 |--------|-----------------------------------|------|------------------------|---------------------------------|
 | GET    | `/api/health`                     | no   | —                      | `{ok,mode}`                     |
-| POST   | `/api/signup`                     | no   | `{email,password}`     | `{token,email,workspaces}`      |
-| POST   | `/api/login`                      | no   | `{email,password}`     | `{token,email,workspaces}`      |
-| GET    | `/api/me`                         | yes  | —                      | `{email,workspaces}`            |
+| POST   | `/api/signup`                     | no   | `{email,password,name}`| `{token,email,name,workspaces}` |
+| POST   | `/api/login`                      | no   | `{email,password}`     | `{token,email,name,workspaces}` |
+| GET    | `/api/me`                         | yes  | —                      | `{email,name,workspaces}`       |
+| PUT    | `/api/account`                    | yes  | `{name}`               | `{ok,name}`                     |
+| POST   | `/api/account/password`           | yes  | `{currentPassword,newPassword}` | `{ok}`                 |
+| POST   | `/api/account/delete`             | yes  | `{password}`           | `{ok}`                          |
 | GET    | `/api/workspaces`                 | yes  | —                      | `{workspaces}`                  |
 | POST   | `/api/workspaces`                 | yes  | `{name}`               | `{workspace}`                   |
 | GET    | `/api/workspaces/:id/state`       | yes  | —                      | `{state,rev}`                   |

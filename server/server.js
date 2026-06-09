@@ -33,22 +33,52 @@ app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.s
 app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE }));
 
 app.post('/api/signup', asyncH(async (req, res) => {
-  const email = norm(req.body.email), password = String(req.body.password || '');
+  const email = norm(req.body.email), password = String(req.body.password || ''), name = String(req.body.name || '').trim().slice(0, 60);
   if (!validEmail(email)) return res.status(400).json({ error: 'Invalid email' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   if (await store.getUserByEmail(email)) return res.status(409).json({ error: 'Account already exists — log in instead' });
-  const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10) });
-  res.json({ token: sign(user), email, workspaces: await store.listWorkspaces(user.id) });
+  const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10), name });
+  res.json({ token: sign(user), email, name: user.name, workspaces: await store.listWorkspaces(user.id) });
 }));
 
 app.post('/api/login', asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || '');
   const user = await store.getUserByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.hash))) return res.status(401).json({ error: 'Wrong email or password' });
-  res.json({ token: sign(user), email, workspaces: await store.listWorkspaces(user.id) });
+  res.json({ token: sign(user), email, name: user.name, workspaces: await store.listWorkspaces(user.id) });
 }));
 
-app.get('/api/me', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); res.json({ email: u.email, workspaces: await store.listWorkspaces(u.uid) }); }));
+app.get('/api/me', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const me = await store.getUserById(u.uid);
+  res.json({ email: u.email, name: me ? me.name : null, workspaces: await store.listWorkspaces(u.uid) });
+}));
+
+app.put('/api/account', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const name = String(req.body.name || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'Name required' });
+  await store.updateUser(u.uid, { name });
+  res.json({ ok: true, name });
+}));
+
+app.post('/api/account/password', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const me = await store.getUserById(u.uid);
+  const cur = String(req.body.currentPassword || ''), next = String(req.body.newPassword || '');
+  if (!me || !(await bcrypt.compare(cur, me.hash))) return res.status(401).json({ error: 'Current password is wrong' });
+  if (next.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  await store.updateUser(u.uid, { hash: await bcrypt.hash(next, 10) });
+  res.json({ ok: true });
+}));
+
+app.post('/api/account/delete', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const me = await store.getUserById(u.uid);
+  if (!me || !(await bcrypt.compare(String(req.body.password || ''), me.hash))) return res.status(401).json({ error: 'Password is wrong' });
+  await store.deleteUser(u.uid);
+  res.json({ ok: true });
+}));
 
 app.get('/api/workspaces', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); res.json({ workspaces: await store.listWorkspaces(u.uid) }); }));
 
