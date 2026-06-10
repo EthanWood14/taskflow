@@ -20,6 +20,34 @@ if (!process.env.JWT_SECRET) console.warn('[taskflow] JWT_SECRET not set — usi
 const store = makeStore(DATA_DIR);
 const MODE = process.env.DATABASE_URL ? 'pg' : 'json';
 
+// ---------- Stripe (payment processor) ----------
+// Fully active once STRIPE_SECRET_KEY + STRIPE_PRICE_ID (+ STRIPE_WEBHOOK_SECRET) are set.
+const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const PRICE_DISPLAY = process.env.STRIPE_PRICE_DISPLAY || '';
+const BILLING_ON = !!(STRIPE_KEY && STRIPE_PRICE_ID);
+if (!BILLING_ON) console.warn('[taskflow] billing disabled — set STRIPE_SECRET_KEY and STRIPE_PRICE_ID to enable');
+async function stripeReq(path, params) {
+  const body = new URLSearchParams(params).toString();
+  const r = await fetch('https://api.stripe.com/v1' + path, { method: 'POST', headers: { Authorization: 'Bearer ' + STRIPE_KEY, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+  const d = await r.json();
+  if (!r.ok) throw new Error((d.error && d.error.message) || 'Stripe error');
+  return d;
+}
+function verifyStripeSig(payloadBuf, header, secret) {
+  try {
+    const items = String(header || '').split(',').map(s => s.split('='));
+    const t = (items.find(i => i[0] === 't') || [])[1];
+    const v1s = items.filter(i => i[0] === 'v1').map(i => i[1]);
+    if (!t || !v1s.length) return false;
+    const expected = crypto.createHmac('sha256', secret).update(t + '.' + payloadBuf.toString('utf8')).digest('hex');
+    return v1s.some(v => { try { return crypto.timingSafeEqual(Buffer.from(v, 'hex'), Buffer.from(expected, 'hex')); } catch (e) { return false; } });
+  } catch (e) { return false; }
+}
+const FREE_WS_LIMIT = 2, FREE_MEMBER_LIMIT = 5;
+async function planOf(uid) { const u = await store.getUserById(uid); return (u && u.plan) === 'pro' ? 'pro' : 'free'; }
+
 const norm = (e) => String(e || '').trim().toLowerCase();
 const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 const sign = (u) => jwt.sign({ uid: u.id, email: u.email }, JWT_SECRET, { expiresIn: '180d' });
@@ -27,6 +55,26 @@ function auth(req) { const m = (req.headers.authorization || '').match(/^Bearer\
 function asyncH(fn) { return (req, res) => Promise.resolve(fn(req, res)).catch(e => { console.error(e); res.status(500).json({ error: 'Server error' }); }); }
 
 const app = express();
+
+// Stripe webhook needs the RAW body for signature verification — mount before express.json().
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyncH(async (req, res) => {
+  if (!BILLING_ON || !STRIPE_WEBHOOK_SECRET) return res.status(400).json({ error: 'Billing not configured' });
+  if (!verifyStripeSig(req.body, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET)) return res.status(400).json({ error: 'Bad signature' });
+  const event = JSON.parse(req.body.toString('utf8'));
+  const obj = (event.data && event.data.object) || {};
+  if (event.type === 'checkout.session.completed') {
+    const uid = (obj.metadata && obj.metadata.userId) || obj.client_reference_id;
+    if (uid) await store.setBilling(uid, { plan: 'pro', stripeCustomerId: obj.customer });
+  } else if (event.type === 'customer.subscription.deleted') {
+    const u = await store.getUserByStripeCustomer(obj.customer);
+    if (u) await store.setBilling(u.id, { plan: 'free' });
+  } else if (event.type === 'customer.subscription.updated') {
+    const u = await store.getUserByStripeCustomer(obj.customer);
+    if (u) await store.setBilling(u.id, { plan: (obj.status === 'active' || obj.status === 'trialing') ? 'pro' : 'free' });
+  }
+  res.json({ received: true });
+}));
+
 app.use(express.json({ limit: '8mb' }));
 app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); if (req.method === 'OPTIONS') return res.sendStatus(204); next(); });
 
@@ -38,20 +86,57 @@ app.post('/api/signup', asyncH(async (req, res) => {
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   if (await store.getUserByEmail(email)) return res.status(409).json({ error: 'Account already exists — log in instead' });
   const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10), name });
-  res.json({ token: sign(user), email, name: user.name, workspaces: await store.listWorkspaces(user.id) });
+  res.json({ token: sign(user), email, name: user.name, plan: 'free', workspaces: await store.listWorkspaces(user.id) });
 }));
 
 app.post('/api/login', asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || '');
   const user = await store.getUserByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.hash))) return res.status(401).json({ error: 'Wrong email or password' });
-  res.json({ token: sign(user), email, name: user.name, workspaces: await store.listWorkspaces(user.id) });
+  res.json({ token: sign(user), email, name: user.name, plan: user.plan === 'pro' ? 'pro' : 'free', workspaces: await store.listWorkspaces(user.id) });
 }));
 
 app.get('/api/me', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
   const me = await store.getUserById(u.uid);
-  res.json({ email: u.email, name: me ? me.name : null, workspaces: await store.listWorkspaces(u.uid) });
+  res.json({ email: u.email, name: me ? me.name : null, plan: (me && me.plan) === 'pro' ? 'pro' : 'free', workspaces: await store.listWorkspaces(u.uid) });
+}));
+
+// ---------- Billing ----------
+app.get('/api/billing/config', asyncH(async (req, res) => {
+  const u = auth(req);
+  let plan = 'free';
+  if (u) plan = await planOf(u.uid);
+  res.json({ enabled: BILLING_ON, plan, priceDisplay: PRICE_DISPLAY, freeLimits: { workspaces: FREE_WS_LIMIT, members: FREE_MEMBER_LIMIT } });
+}));
+
+app.post('/api/billing/checkout', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!BILLING_ON) return res.status(400).json({ error: 'Billing is not configured on this server yet — see BACKEND.md (set STRIPE_SECRET_KEY and STRIPE_PRICE_ID).' });
+  const me = await store.getUserById(u.uid);
+  const origin = req.headers.origin || ('https://' + req.headers.host);
+  const params = {
+    mode: 'subscription',
+    'line_items[0][price]': STRIPE_PRICE_ID,
+    'line_items[0][quantity]': '1',
+    success_url: origin + '/?billing=success',
+    cancel_url: origin + '/?billing=cancel',
+    'metadata[userId]': u.uid,
+    client_reference_id: u.uid,
+  };
+  if (me && me.stripeCustomerId) params.customer = me.stripeCustomerId; else params.customer_email = u.email;
+  const session = await stripeReq('/checkout/sessions', params);
+  res.json({ url: session.url });
+}));
+
+app.post('/api/billing/portal', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!BILLING_ON) return res.status(400).json({ error: 'Billing is not configured on this server yet.' });
+  const me = await store.getUserById(u.uid);
+  if (!me || !me.stripeCustomerId) return res.status(400).json({ error: 'No billing profile yet — upgrade first.' });
+  const origin = req.headers.origin || ('https://' + req.headers.host);
+  const session = await stripeReq('/billing_portal/sessions', { customer: me.stripeCustomerId, return_url: origin + '/' });
+  res.json({ url: session.url });
 }));
 
 app.put('/api/account', asyncH(async (req, res) => {
@@ -82,7 +167,14 @@ app.post('/api/account/delete', asyncH(async (req, res) => {
 
 app.get('/api/workspaces', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); res.json({ workspaces: await store.listWorkspaces(u.uid) }); }));
 
-app.post('/api/workspaces', asyncH(async (req, res) => { const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' }); const ws = await store.createWorkspace(u.uid, req.body.name); res.json({ workspace: ws }); }));
+app.post('/api/workspaces', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (BILLING_ON && (await planOf(u.uid)) !== 'pro') {
+    const owned = (await store.listWorkspaces(u.uid)).filter(w => w.role === 'owner').length;
+    if (owned >= FREE_WS_LIMIT) return res.status(402).json({ error: `Free plan includes ${FREE_WS_LIMIT} workspaces — upgrade to Pro for unlimited.`, upgrade: true });
+  }
+  const ws = await store.createWorkspace(u.uid, req.body.name); res.json({ workspace: ws });
+}));
 
 app.get('/api/workspaces/:id/state', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
@@ -135,7 +227,16 @@ app.post('/api/workspaces/:id/delete', asyncH(async (req, res) => {
 
 app.post('/api/join', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
-  const ws = await store.consumeInvite(u.uid, String(req.body.code || '').trim());
+  const code = String(req.body.code || '').trim();
+  if (BILLING_ON) {
+    const inv = await store.peekInvite(code);
+    if (inv) {
+      const meta = await store.getWorkspaceMeta(inv.wsId);
+      if (meta && meta.members >= FREE_MEMBER_LIMIT && (await planOf(meta.ownerId)) !== 'pro')
+        return res.status(402).json({ error: `This workspace is at the free plan's ${FREE_MEMBER_LIMIT}-member limit — its owner can upgrade to Pro for unlimited members.`, upgrade: true });
+    }
+  }
+  const ws = await store.consumeInvite(u.uid, code);
   if (!ws) return res.status(404).json({ error: 'Invalid or expired invite code' });
   res.json({ workspace: ws });
 }));

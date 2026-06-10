@@ -654,6 +654,21 @@
   .sync-err { color:var(--p1); font-size:12px; margin-top:6px; }
   .sync-on { font-size:13px; }
   .sync-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+  /* ===== Billing / pricing ===== */
+  .plan-badge { font-size:10px; font-weight:800; padding:1px 7px; border-radius:8px; background:var(--hover); color:var(--text-dim); letter-spacing:.4px; vertical-align:middle; }
+  .plan-badge.pro { background:var(--brand-grad); color:#fff; }
+  .pr-reason { background:var(--accent-soft); border:1px solid var(--accent); border-radius:10px; padding:10px 13px; margin-bottom:14px; font-size:13px; }
+  .pr-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .pr-card { border:1px solid var(--border); border-radius:16px; padding:18px; background:var(--bg-alt); }
+  .pr-card.pr-pro { border-color:var(--accent); box-shadow:0 8px 26px rgba(109,93,252,.18); position:relative; }
+  .pr-name { font-weight:800; font-size:16px; }
+  .pr-price { font-size:26px; font-weight:800; margin:4px 0 12px; background:var(--brand-grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .pr-feat { font-size:13px; padding:4px 0; color:var(--text-dim); }
+  .pr-feat b { color:var(--text); }
+  .pr-cur { margin-top:10px; font-size:12px; font-weight:700; color:var(--green); }
+  .pr-note { font-size:12px; color:var(--text-faint); }
+  @media (max-width:600px){ .pr-cols { grid-template-columns:1fr; } }
+
   .acct-head { display:flex; align-items:center; gap:11px; margin-bottom:10px; }
   .acct-av { width:42px; height:42px; min-width:42px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font-size:18px; font-weight:800; }
   .acct-name { font-weight:700; font-size:15px; display:flex; align-items:center; gap:6px; }
@@ -2567,6 +2582,7 @@ function openCommandPalette() {
     {icon:'📋', label:'New project from template', run:()=>openTemplatePicker()},
     {icon:'📁', label:'New folder', run:()=>openFolderModal()},
     {icon:'☁', label:'Cloud sync / account', run:()=>openSettings()},
+    {icon:'💎', label:'Upgrade to Pro / pricing', run:()=>openPricing()},
     {icon:'⚙', label:'Open Settings', run:()=>openSettings()},
     {icon:'🎨', label:'Change theme & accent', run:()=>openSettings()},
     {icon:'☾', label:'Toggle dark mode', run:()=>{ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); render(); }},
@@ -2970,6 +2986,7 @@ const SYNC = {
   clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
   workspaces: [], activeWs: localStorage.getItem('tf.ws') || null,
   ws: null, status: 'off', _suppress: false, _pushTimer: null, online: [], _removed: false,
+  billing: { enabled: false, plan: 'free', priceDisplay: '', freeLimits: { workspaces: 2, members: 5 } },
   get on(){ return !!this.token; },
   get active(){ return (this.workspaces||[]).find(w=>w.id===this.activeWs) || (this.workspaces||[])[0] || null; },
   async api(path, opts={}) {
@@ -2977,12 +2994,15 @@ const SYNC = {
     if (this.token) headers['Authorization'] = 'Bearer '+this.token;
     const res = await fetch(path, Object.assign({}, opts, { headers }));
     let data=null; try { data = await res.json(); } catch(e){}
-    if (!res.ok) throw new Error((data&&data.error)||('HTTP '+res.status));
+    if (!res.ok) { const err=new Error((data&&data.error)||('HTTP '+res.status)); err.status=res.status; err.upgrade=!!(data&&data.upgrade); throw err; }
     return data;
   },
   async signup(email, password, name) { const d = await this.api('/api/signup',{method:'POST',body:JSON.stringify({email,password,name})}); this._auth(d); await this.enterWorkspace(); return d; },
   async login(email, password) { const d = await this.api('/api/login',{method:'POST',body:JSON.stringify({email,password})}); this._auth(d); await this.enterWorkspace(); return d; },
-  _auth(d) { this.token=d.token; this.email=d.email; this.name=d.name||this.email; this.workspaces=d.workspaces||[]; if(!this.active) this.activeWs=(this.workspaces[0]||{}).id||null; localStorage.setItem('tf.token',d.token); localStorage.setItem('tf.email',d.email); localStorage.setItem('tf.name',this.name); if(this.activeWs)localStorage.setItem('tf.ws',this.activeWs); this.status='on'; },
+  _auth(d) { this.token=d.token; this.email=d.email; this.name=d.name||this.email; if(d.plan)this.billing.plan=d.plan; this.workspaces=d.workspaces||[]; if(!this.active) this.activeWs=(this.workspaces[0]||{}).id||null; localStorage.setItem('tf.token',d.token); localStorage.setItem('tf.email',d.email); localStorage.setItem('tf.name',this.name); if(this.activeWs)localStorage.setItem('tf.ws',this.activeWs); this.status='on'; this.refreshBilling(); },
+  async refreshBilling(){ if(!location.protocol.startsWith('http'))return; try { const d=await this.api('/api/billing/config'); this.billing=Object.assign(this.billing,d); } catch(e){} },
+  async upgrade(){ const d=await this.api('/api/billing/checkout',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
+  async portal(){ const d=await this.api('/api/billing/portal',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
   logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
   async refreshWorkspaces(){ try { const d=await this.api('/api/me'); this.workspaces=d.workspaces||[]; if(d.name){ this.name=d.name; localStorage.setItem('tf.name',d.name); } } catch(e){} },
   async updateName(name){ const d=await this.api('/api/account',{method:'PUT',body:JSON.stringify({name})}); this.name=d.name; localStorage.setItem('tf.name',d.name); },
@@ -3039,10 +3059,12 @@ function syncBoxHtml() {
     const dot = SYNC.status==='error'?'#ef4444':'#10b981';
     const wsOpts = (SYNC.workspaces||[]).map(w=>`<option value="${w.id}" ${w.id===SYNC.activeWs?'selected':''}>${esc(w.name)} (${w.members}👤)</option>`).join('');
     const nm = SYNC.name||SYNC.email||'?';
+    const pro = SYNC.billing.plan==='pro';
     return `<div class="sync-on">
       <div class="acct-head"><span class="acct-av">${esc(nm[0].toUpperCase())}</span>
-        <div class="acct-id"><div class="acct-name">${esc(nm)} <span class="sync-dot" style="background:${dot}" title="live sync ${SYNC.status==='error'?'error':'on'}"></span></div><div class="acct-email">${esc(SYNC.email)}</div></div></div>
+        <div class="acct-id"><div class="acct-name">${esc(nm)} <span class="plan-badge ${pro?'pro':''}">${pro?'💎 PRO':'Free'}</span> <span class="sync-dot" style="background:${dot}" title="live sync ${SYNC.status==='error'?'error':'on'}"></span></div><div class="acct-email">${esc(SYNC.email)}</div></div></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        ${SYNC.billing.enabled ? (pro?`<button class="btn ghost" id="acct-billing">💳 Manage billing</button>`:`<button class="btn primary" id="acct-upgrade" style="padding:7px 14px">💎 Upgrade to Pro</button>`) : ''}
         <button class="btn ghost" id="acct-name">✎ Name</button>
         <button class="btn ghost" id="acct-pass">🔑 Password</button>
         <button class="btn ghost" id="sync-logout">Log out</button></div>
@@ -3074,18 +3096,63 @@ function wireSyncBox() {
     try{ await fn(email,pass); refresh(); render(); }catch(e){ if(err)err.textContent=e.message||'Failed'; } };
   const li=$('#sync-login'); if(li) li.onclick=()=>run((e,p)=>SYNC.login(e,p));
   const su=$('#sync-signup'); if(su) su.onclick=()=>run((e,p)=>SYNC.signup(e,p,($('#sync-name')||{}).value||''));
+  // billing controls
+  const ub=$('#acct-upgrade'); if(ub) ub.onclick=()=>openPricing();
+  const mb=$('#acct-billing'); if(mb) mb.onclick=async()=>{ try{ await SYNC.portal(); }catch(e){ toast('Billing: '+e.message); } };
   // account controls
   const an=$('#acct-name'); if(an) an.onclick=async()=>{ const n=prompt('Your display name', SYNC.name||''); if(n&&n.trim()){ try{ await SYNC.updateName(n.trim()); refresh(); render(); toast('✓ Name updated'); }catch(e){ toast('Failed: '+e.message); } } };
   const ap=$('#acct-pass'); if(ap) ap.onclick=async()=>{ const cur=prompt('Current password'); if(cur==null)return; const nw=prompt('New password (6+ chars)'); if(!nw)return; try{ await SYNC.changePassword(cur,nw); toast('🔑 Password changed'); }catch(e){ toast('Failed: '+e.message); } };
   const ad=$('#acct-delete'); if(ad) ad.onclick=async()=>{ if(!confirm('Permanently delete your account and any workspaces you own? This cannot be undone.'))return; const pw=prompt('Confirm your password to delete'); if(!pw)return; try{ await SYNC.deleteAccount(pw); refresh(); render(); toast('Account deleted'); }catch(e){ toast('Failed: '+e.message); } };
   // workspace controls
   const sel=$('#sync-ws'); if(sel) sel.onchange=async()=>{ await SYNC.switchWorkspace(sel.value); refresh(); render(); };
-  const nw=$('#sync-newws'); if(nw) nw.onclick=async()=>{ const n=prompt('New workspace name','Team workspace'); if(n){ try{ await SYNC.createWorkspace(n.trim()); refresh(); render(); }catch(e){ toast('Failed: '+e.message); } } };
+  const nw=$('#sync-newws'); if(nw) nw.onclick=async()=>{ const n=prompt('New workspace name','Team workspace'); if(n){ try{ await SYNC.createWorkspace(n.trim()); refresh(); render(); }catch(e){ if(e.upgrade){ closeModal(); openPricing(e.message); } else toast('Failed: '+e.message); } } };
   const inv=$('#sync-invite'); if(inv) inv.onclick=async()=>{ try{ const code=await SYNC.invite(); const url=location.origin+location.pathname+'?join='+code; const out=$('#sync-invite-out'); if(out) out.innerHTML=`Share this link — anyone who opens it and logs in joins this workspace:<br><b style="word-break:break-all">${esc(url)}</b>`; copyText(url); }catch(e){ toast('Failed: '+e.message); } };
-  const jn=$('#sync-join'); if(jn) jn.onclick=async()=>{ const c=prompt('Enter invite code'); if(c){ try{ const w=await SYNC.join(c.trim()); toast('🤝 Joined “'+w.name+'”'); refresh(); render(); }catch(e){ toast('Join failed: '+e.message); } } };
+  const jn=$('#sync-join'); if(jn) jn.onclick=async()=>{ const c=prompt('Enter invite code'); if(c){ try{ const w=await SYNC.join(c.trim()); toast('🤝 Joined “'+w.name+'”'); refresh(); render(); }catch(e){ if(e.upgrade){ closeModal(); openPricing(e.message); } else toast('Join failed: '+e.message); } } };
   const del=$('#sync-delws'); if(del) del.onclick=async()=>{ if(confirm('Delete this workspace for everyone? This cannot be undone.')){ try{ await SYNC.deleteWorkspace(); refresh(); render(); toast('Workspace deleted'); }catch(e){ toast('Failed: '+e.message); } } };
   const lv=$('#sync-leavews'); if(lv) lv.onclick=async()=>{ if(confirm('Leave this workspace?')){ try{ await SYNC.leave(); refresh(); render(); toast('Left workspace'); }catch(e){ toast('Failed: '+e.message); } } };
   if($('#sync-members')) renderMembersList();
+}
+// ---------- Pricing / upgrade ----------
+function openPricing(reason) {
+  const b = SYNC.billing || {};
+  const lim = b.freeLimits || { workspaces:2, members:5 };
+  const price = b.priceDisplay ? esc(b.priceDisplay) : 'See checkout';
+  const canBuy = b.enabled && SYNC.on;
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs">💎 TaskFlow Pro</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">
+      ${reason?`<div class="pr-reason">⚠ ${esc(reason)}</div>`:''}
+      <div class="pr-cols">
+        <div class="pr-card">
+          <div class="pr-name">Free</div><div class="pr-price">$0</div>
+          <div class="pr-feat">✓ Unlimited tasks, projects & views</div>
+          <div class="pr-feat">✓ All power features (palette, planner, matrix, stats…)</div>
+          <div class="pr-feat">✓ Local-first + offline PWA</div>
+          <div class="pr-feat">✓ ${lim.workspaces} cloud workspaces</div>
+          <div class="pr-feat">✓ ${lim.members} members per workspace</div>
+          <div class="pr-cur">${SYNC.billing.plan!=='pro'?'Your current plan':''}</div>
+        </div>
+        <div class="pr-card pr-pro">
+          <div class="pr-name">Pro <span class="plan-badge pro">💎</span></div><div class="pr-price">${price}</div>
+          <div class="pr-feat">✓ Everything in Free</div>
+          <div class="pr-feat">✓ <b>Unlimited</b> cloud workspaces</div>
+          <div class="pr-feat">✓ <b>Unlimited</b> members per workspace</div>
+          <div class="pr-feat">✓ Priority support</div>
+          <div class="pr-feat">✓ Supports development ❤️</div>
+          ${SYNC.billing.plan==='pro' ? `<div class="pr-cur">Your current plan</div>`
+            : canBuy ? `<button class="btn primary" id="pr-buy" style="width:100%;margin-top:10px">Upgrade — secure checkout</button>`
+            : `<div class="pr-note">${SYNC.on ? 'Billing is not configured on this server yet. The owner needs to add Stripe keys (see BACKEND.md).' : 'Log in first (⚙ Settings → Cloud sync), then upgrade.'}</div>`}
+        </div>
+      </div>
+      <div class="pr-note" style="margin-top:12px">Payments are processed by <b>Stripe</b> — card details never touch this server. Cancel anytime from “Manage billing”.</div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button></div></div></div>`;
+  const buy=$('#pr-buy'); if(buy) buy.onclick=async()=>{ buy.disabled=true; buy.textContent='Opening checkout…'; try{ await SYNC.upgrade(); }catch(e){ buy.disabled=false; buy.textContent='Upgrade — secure checkout'; toast('Checkout: '+e.message); } };
+}
+function handleBillingParam() {
+  const m = location.search.match(/[?&]billing=(success|cancel)/); if(!m) return;
+  history.replaceState(null,'',location.pathname);
+  if (m[1]==='success') { setTimeout(async()=>{ await SYNC.refreshBilling(); render(); confettiBurst(); playSound('fanfare'); toast('💎 Welcome to Pro! Thank you.'); }, 600); }
+  else toast('Checkout canceled — no charge.');
 }
 async function renderMembersList() {
   const host=$('#sync-members'); if(!host) return;
@@ -3107,10 +3174,11 @@ function initSync() {
   // Only attempt when served from a backend origin (http/https), not file://
   if (SYNC.on && location.protocol.startsWith('http')) {
     SYNC.api('/api/health').then(async ()=>{
-      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; await SYNC.enterWorkspace(); handleJoinParam(); }
+      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); }
       catch(e){ SYNC.status='off'; }
     }).catch(()=>{ SYNC.status='off'; });
   } else { handleJoinParam(); }
+  handleBillingParam();
 }
 function handleJoinParam() {
   const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;

@@ -33,6 +33,25 @@ It also serves the static app, so it's **one Railway service**. The app still wo
 
 > Without a Volume the app still runs, but stored accounts/tasks reset on each redeploy. Add the Volume for persistence.
 
+## 💳 Payments (Stripe) — optional, fully built in
+
+The server ships with a complete **Stripe** subscription integration: secure Checkout, webhook-driven plan updates, a customer billing portal, and plan gating (Free = 2 workspaces / 5 members each · **Pro** = unlimited). It activates automatically once you add your Stripe keys — until then the upgrade UI hides itself and everything stays free/unlimited-by-default.
+
+**To turn it on (you do this part — it's your Stripe account and keys):**
+1. Create a Stripe account at **stripe.com** (or use an existing one). Start in **Test mode**.
+2. **Create a product**: Dashboard → Product catalog → *Add product* → e.g. "TaskFlow Pro", **recurring** price (say $5/month). Copy the **price ID** (`price_…`).
+3. **Get your secret key**: Dashboard → Developers → API keys → **Secret key** (`sk_test_…`).
+4. **Create a webhook**: Developers → Webhooks → *Add endpoint* → URL `https://YOUR-APP.up.railway.app/api/billing/webhook` → select events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`. Copy the **signing secret** (`whsec_…`).
+5. In **Railway → your service → Variables**, add:
+   - `STRIPE_SECRET_KEY` = `sk_test_…`
+   - `STRIPE_PRICE_ID` = `price_…`
+   - `STRIPE_WEBHOOK_SECRET` = `whsec_…`
+   - `STRIPE_PRICE_DISPLAY` = `$5/mo` *(optional, shown in the pricing modal)*
+6. Redeploy. The **💎 Upgrade to Pro** button appears in ⚙ Settings → account, and the pricing modal goes live.
+7. **Test it** with Stripe's test card `4242 4242 4242 4242` (any future expiry/CVC). The webhook flips your account to Pro; "Manage billing" opens Stripe's customer portal (cancel/update card there). When ready, switch the keys to live mode.
+
+Billing endpoints: `GET /api/billing/config` · `POST /api/billing/checkout` · `POST /api/billing/portal` · `POST /api/billing/webhook` (raw-body, signature-verified). Card data never touches your server — it all happens on Stripe-hosted pages.
+
 ## Switching to Postgres (optional)
 1. In your Railway project: **New → Database → Add PostgreSQL**.
 2. Railway injects `DATABASE_URL` into your service automatically (same project). Redeploy.

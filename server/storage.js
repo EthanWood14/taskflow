@@ -67,6 +67,10 @@ export class JsonStore {
   async removeMember(wsId, userId) { const w = this.db.workspaces[wsId]; if (!w) return false; if (w.members[userId] === 'owner') return false; delete w.members[userId]; this._save(); return true; }
   async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
   async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; this._save(); return u; }
+  async setBilling(id, { plan, stripeCustomerId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; this._save(); return u; }
+  async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
+  async getWorkspaceMeta(wsId) { const w = this.db.workspaces[wsId]; if (!w) return null; return { ownerId: w.ownerId, members: Object.keys(w.members || {}).length }; }
+  async peekInvite(code) { const inv = this.db.invites[code]; return inv ? { wsId: inv.wsId } : null; }
   async deleteUser(id) {
     for (const w of Object.values(this.db.workspaces)) {
       if (w.ownerId === id) { for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === w.id) delete this.db.invites[c]; delete this.db.workspaces[w.id]; }
@@ -106,10 +110,12 @@ export class PgStore {
       CREATE TABLE IF NOT EXISTS memberships (workspace_id text, user_id text, role text, PRIMARY KEY (workspace_id, user_id));
       CREATE TABLE IF NOT EXISTS invites (code text PRIMARY KEY, workspace_id text, created_at bigint);
       ALTER TABLE users ADD COLUMN IF NOT EXISTS name text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS plan text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id text;
     `);
   }
-  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
-  async getUserById(id) { const r = await this.pool.query('SELECT id,email,hash,name FROM users WHERE id=$1', [id]); return r.rows[0] || null; }
+  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
+  async getUserById(id) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId" FROM users WHERE id=$1', [id]); return r.rows[0] || null; }
   async createUser({ id, email, hash, name }) {
     await this.pool.query('INSERT INTO users(id,email,hash,name,created_at) VALUES($1,$2,$3,$4,$5)', [id, email, hash, name || email.split('@')[0], Date.now()]);
     const wsId = newId('ws');
@@ -150,6 +156,18 @@ export class PgStore {
     if (fields.hash) await this.pool.query('UPDATE users SET hash=$2 WHERE id=$1', [id, fields.hash]);
     return this.getUserById(id);
   }
+  async setBilling(id, { plan, stripeCustomerId }) {
+    if (plan != null) await this.pool.query('UPDATE users SET plan=$2 WHERE id=$1', [id, plan]);
+    if (stripeCustomerId != null) await this.pool.query('UPDATE users SET stripe_customer_id=$2 WHERE id=$1', [id, stripeCustomerId]);
+    return this.getUserById(id);
+  }
+  async getUserByStripeCustomer(cid) { const r = await this.pool.query('SELECT id,email,hash,name,plan FROM users WHERE stripe_customer_id=$1', [cid]); return r.rows[0] || null; }
+  async getWorkspaceMeta(wsId) {
+    const w = await this.pool.query('SELECT owner_id AS "ownerId" FROM workspaces WHERE id=$1', [wsId]); if (!w.rows[0]) return null;
+    const c = await this.pool.query('SELECT count(*) FROM memberships WHERE workspace_id=$1', [wsId]);
+    return { ownerId: w.rows[0].ownerId, members: Number(c.rows[0].count) };
+  }
+  async peekInvite(code) { const r = await this.pool.query('SELECT workspace_id FROM invites WHERE code=$1', [code]); return r.rows[0] ? { wsId: r.rows[0].workspace_id } : null; }
   async deleteUser(id) {
     const owned = await this.pool.query('SELECT id FROM workspaces WHERE owner_id=$1', [id]);
     for (const w of owned.rows) { await this.pool.query('DELETE FROM memberships WHERE workspace_id=$1', [w.id]); await this.pool.query('DELETE FROM invites WHERE workspace_id=$1', [w.id]); await this.pool.query('DELETE FROM workspaces WHERE id=$1', [w.id]); }
