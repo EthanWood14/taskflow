@@ -103,8 +103,28 @@ app.post('/api/signup', asyncH(async (req, res) => {
   if (!validEmail(email)) return res.status(400).json({ error: 'Invalid email' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
   if (await store.getUserByEmail(email)) return res.status(409).json({ error: 'Account already exists — log in instead' });
-  const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10), name });
-  res.json({ token: sign(user), email, name: user.name, plan: 'free', workspaces: await store.listWorkspaces(user.id) });
+  // Recovery code: shown to the user exactly once; only its hash is stored.
+  const recoveryCode = 'rk-' + crypto.randomBytes(3).toString('hex') + '-' + crypto.randomBytes(3).toString('hex') + '-' + crypto.randomBytes(3).toString('hex');
+  const user = await store.createUser({ id: 'u_' + crypto.randomBytes(8).toString('hex'), email, hash: await bcrypt.hash(password, 10), name, recoveryHash: await bcrypt.hash(recoveryCode, 10) });
+  res.json({ token: sign(user), email, name: user.name, plan: 'free', recoveryCode, workspaces: await store.listWorkspaces(user.id) });
+}));
+
+// Self-service password reset using the recovery code (no email provider needed).
+app.post('/api/reset-password', asyncH(async (req, res) => {
+  const email = norm(req.body.email), code = String(req.body.recoveryCode || '').trim(), next = String(req.body.newPassword || '');
+  const user = await store.getUserByEmail(email);
+  if (!user || !user.recoveryHash || !(await bcrypt.compare(code, user.recoveryHash))) return res.status(401).json({ error: 'Email or recovery code is wrong' });
+  if (next.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  await store.updateUser(user.id, { hash: await bcrypt.hash(next, 10) });
+  res.json({ token: sign(user), email, name: user.name, plan: user.plan === 'pro' ? 'pro' : 'free', workspaces: await store.listWorkspaces(user.id) });
+}));
+
+// Regenerate the recovery code (e.g. after using it, or if it was never saved).
+app.post('/api/account/recovery', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const recoveryCode = 'rk-' + crypto.randomBytes(3).toString('hex') + '-' + crypto.randomBytes(3).toString('hex') + '-' + crypto.randomBytes(3).toString('hex');
+  await store.updateUser(u.uid, { recoveryHash: await bcrypt.hash(recoveryCode, 10) });
+  res.json({ recoveryCode });
 }));
 
 app.post('/api/login', asyncH(async (req, res) => {

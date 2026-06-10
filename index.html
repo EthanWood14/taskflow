@@ -358,6 +358,8 @@
     #app.m-search .topbar .spacer-m { display: none; }
     #app.m-search .topbar .m-search-close { display: grid; }
     #app.m-search .topbar .search-box { display: flex; width: 100%; }
+    #app.m-search .topbar .tb-signin, #app.m-search .topbar .tb-acct { display: none; }
+    .welcome-bar { flex-wrap: wrap; }
 
     /* Bottom tab bar */
     #bottomnav {
@@ -689,6 +691,24 @@
   .auth-switch { text-align:center; margin-top:14px; font-size:13px; color:var(--text-dim); }
   .auth-switch a { color:var(--accent); font-weight:700; cursor:pointer; }
   .auth-switch a:hover { text-decoration:underline; }
+  .auth-forgot { font-weight:500 !important; font-size:12px; }
+  .pw-wrap { position:relative; }
+  .pw-wrap input { width:100%; padding-right:42px !important; }
+  .pw-eye { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:32px; height:32px; border-radius:8px; font-size:14px; }
+  .pw-eye:hover { background:var(--hover); }
+  .caps-warn { color:var(--p2); font-size:12px; font-weight:700; margin:-6px 0 6px; }
+  .rk-code { font-family:ui-monospace,Consolas,monospace; font-size:17px; font-weight:700; letter-spacing:1px;
+    background:var(--accent-soft); border:1px dashed var(--accent); border-radius:11px; padding:14px; user-select:all; word-break:break-all; }
+  /* topbar auth */
+  .tb-signin { background:var(--brand-grad); color:#fff; font-weight:700; padding:7px 16px; border-radius:10px; box-shadow:0 3px 10px rgba(109,93,252,.3); }
+  .tb-signin:hover { filter:brightness(1.06); }
+  .tb-acct { width:34px; height:34px; min-width:34px; border-radius:50%; background:var(--brand-grad); color:#fff; font-weight:800; font-size:14px; box-shadow:var(--shadow-sm); }
+  .tb-acct:hover { filter:brightness(1.08); }
+  /* welcome banner */
+  .welcome-bar { display:flex; align-items:center; gap:12px; padding:9px 16px; background:var(--accent-soft);
+    border-bottom:1px solid var(--border); font-size:13px; }
+  .welcome-bar .wb-text { flex:1; }
+  .welcome-bar .wb-cta { padding:6px 14px; }
 
   .acct-head { display:flex; align-items:center; gap:11px; margin-bottom:10px; }
   .acct-av { width:42px; height:42px; min-width:42px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font-size:18px; font-weight:800; }
@@ -1341,10 +1361,20 @@ function topbarHtml() {
     <span class="spacer-m"></span>
     <span class="pres-host">${presencePillHtml()}</span>
     <div class="search-box">🔍<input id="search" placeholder="Search tasks…" value="${esc(ui.search)}" /></div>
+    ${location.protocol.startsWith('http') ? (window.SYNC && SYNC.on
+      ? `<button class="tb-acct" data-act="account-menu" title="${esc(SYNC.name||SYNC.email||'Account')}">${esc((SYNC.name||SYNC.email||'?')[0].toUpperCase())}</button>`
+      : `<button class="tb-signin" data-act="open-auth">Sign in</button>`) : ''}
     <button class="icon-btn desk-only" data-act="quick-add" title="Quick add (q)">+</button>
-  </div>`;
+  </div>${welcomeBannerHtml()}`;
 }
 
+// First-visit nudge for web visitors who aren't signed in (dismissible).
+function welcomeBannerHtml() {
+  if (!location.protocol.startsWith('http') || (window.SYNC && SYNC.on) || localStorage.getItem('tf.welcomeDismissed')) return '';
+  return `<div class="welcome-bar"><span class="wb-text">☁ <b>Sync your tasks across devices</b> — free account, takes 30 seconds.</span>
+    <button class="btn primary wb-cta" data-act="open-auth">Sign in / Sign up</button>
+    <button class="icon-btn" data-act="dismiss-welcome" title="Dismiss">✕</button></div>`;
+}
 function inlineAddHtml(projId, sectionId, presetDate) {
   return `<div class="inline-add"><div class="inline-add-trigger" data-inlineadd data-proj="${projId}" data-sec="${sectionId||''}" data-date="${presetDate||''}"><span class="plus">+</span> Add task</div></div>`;
 }
@@ -2175,6 +2205,9 @@ function wireMain() {
     else if(a==='bulk-add') openBulkAdd();
     else if(a==='weekly-review') openWeeklyReview();
     else if(a==='open-templates') openTemplatePicker();
+    else if(a==='open-auth') openAuthModal('login');
+    else if(a==='account-menu') accountMenu(e.clientX, e.clientY);
+    else if(a==='dismiss-welcome'){ localStorage.setItem('tf.welcomeDismissed','1'); render(); }
   });
   m.querySelectorAll('[data-delgoal]').forEach(el=>el.onclick=()=>{ state.goals=state.goals.filter(g=>g.id!==el.dataset.delgoal); persist(); render(); });
   m.querySelectorAll('.tl-bar[data-task]').forEach(el=>el.onclick=()=>openTaskDetail(el.dataset.task));
@@ -3051,6 +3084,8 @@ const SYNC = {
   async portal(){ const d=await this.api('/api/billing/portal',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
   logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
   async refreshWorkspaces(){ try { const d=await this.api('/api/me'); this.workspaces=d.workspaces||[]; if(d.name){ this.name=d.name; localStorage.setItem('tf.name',d.name); } } catch(e){} },
+  async resetPassword(email, recoveryCode, newPassword){ const d=await this.api('/api/reset-password',{method:'POST',body:JSON.stringify({email,recoveryCode,newPassword})}); this._auth(d); await this.enterWorkspace(); return d; },
+  async regenRecovery(){ const d=await this.api('/api/account/recovery',{method:'POST',body:'{}'}); return d.recoveryCode; },
   async updateName(name){ const d=await this.api('/api/account',{method:'PUT',body:JSON.stringify({name})}); this.name=d.name; localStorage.setItem('tf.name',d.name); },
   async changePassword(currentPassword,newPassword){ await this.api('/api/account/password',{method:'POST',body:JSON.stringify({currentPassword,newPassword})}); },
   async deleteAccount(password){ await this.api('/api/account/delete',{method:'POST',body:JSON.stringify({password})}); this.logout(); },
@@ -3113,6 +3148,7 @@ function syncBoxHtml() {
         ${SYNC.billing.enabled ? (pro?`<button class="btn ghost" id="acct-billing">💳 Manage billing</button>`:`<button class="btn primary" id="acct-upgrade" style="padding:7px 14px">💎 Upgrade to Pro</button>`) : ''}
         <button class="btn ghost" id="acct-name">✎ Name</button>
         <button class="btn ghost" id="acct-pass">🔑 Password</button>
+        <button class="btn ghost" id="acct-recovery" title="View a new recovery code">🛟 Recovery code</button>
         <button class="btn ghost" id="sync-logout">Log out</button></div>
       <div class="field" style="margin:10px 0 6px"><label>Active workspace</label>
         <div style="display:flex;gap:6px"><select id="sync-ws" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">${wsOpts}</select>
@@ -3148,6 +3184,7 @@ function wireSyncBox() {
   // account controls
   const an=$('#acct-name'); if(an) an.onclick=async()=>{ const n=prompt('Your display name', SYNC.name||''); if(n&&n.trim()){ try{ await SYNC.updateName(n.trim()); refresh(); render(); toast('✓ Name updated'); }catch(e){ toast('Failed: '+e.message); } } };
   const ap=$('#acct-pass'); if(ap) ap.onclick=async()=>{ const cur=prompt('Current password'); if(cur==null)return; const nw=prompt('New password (6+ chars)'); if(!nw)return; try{ await SYNC.changePassword(cur,nw); toast('🔑 Password changed'); }catch(e){ toast('Failed: '+e.message); } };
+  const ar=$('#acct-recovery'); if(ar) ar.onclick=async()=>{ if(!confirm('Generate a new recovery code? Your old one stops working.'))return; try{ const code=await SYNC.regenRecovery(); showRecoveryCode(code,false); }catch(e){ toast('Failed: '+e.message); } };
   const ad=$('#acct-delete'); if(ad) ad.onclick=async()=>{ if(!confirm('Permanently delete your account and any workspaces you own? This cannot be undone.'))return; const pw=prompt('Confirm your password to delete'); if(!pw)return; try{ await SYNC.deleteAccount(pw); refresh(); render(); toast('Account deleted'); }catch(e){ toast('Failed: '+e.message); } };
   // workspace controls
   const sel=$('#sync-ws'); if(sel) sel.onchange=async()=>{ await SYNC.switchWorkspace(sel.value); refresh(); render(); };
@@ -3158,39 +3195,70 @@ function wireSyncBox() {
   const lv=$('#sync-leavews'); if(lv) lv.onclick=async()=>{ if(confirm('Leave this workspace?')){ try{ await SYNC.leave(); refresh(); render(); toast('Left workspace'); }catch(e){ toast('Failed: '+e.message); } } };
   if($('#sync-members')) renderMembersList();
 }
-// ---------- Quick auth (sign in / sign up modal) ----------
+// ---------- Quick auth (sign in / sign up / reset modal) ----------
+function pwFieldHtml(id, placeholder, autocomplete) {
+  return `<div class="pw-wrap"><input id="${id}" type="password" placeholder="${placeholder}" autocomplete="${autocomplete}"><button type="button" class="pw-eye" data-eye="${id}" title="Show password">👁</button></div>`;
+}
 function openAuthModal(mode) {
-  mode = mode === 'signup' ? 'signup' : 'login';
+  mode = (mode==='signup'||mode==='reset') ? mode : 'login';
+  const titles = { login:'Welcome back', signup:'Create your account', reset:'Reset your password' };
+  const labels = { login:'Log in', signup:'Create account', reset:'Reset password & sign in' };
   modalRoot.innerHTML = `<div class="overlay"><div class="modal" style="max-width:400px">
-    <div class="modal-head"><div class="crumbs">${mode==='login'?'Welcome back':'Create your account'}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-head"><div class="crumbs">${titles[mode]}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
       <div class="auth-logo"><span class="dot">✓</span>${esc(state.settings.workspaceName||'TaskFlow')}</div>
+      ${mode==='reset'?`<div class="sync-note" style="margin-bottom:12px">Enter the <b>recovery code</b> you saved when you created your account, then choose a new password.</div>`:''}
       ${mode==='signup'?`<div class="field"><label>Name</label><input id="au-name" type="text" placeholder="Your name" autocomplete="name"></div>`:''}
       <div class="field"><label>Email</label><input id="au-email" type="email" placeholder="you@email.com" autocomplete="username"></div>
-      <div class="field"><label>Password</label><input id="au-pass" type="password" placeholder="${mode==='signup'?'6+ characters':'Your password'}" autocomplete="${mode==='signup'?'new-password':'current-password'}"></div>
+      ${mode==='reset'?`<div class="field"><label>Recovery code</label><input id="au-recovery" type="text" placeholder="rk-xxxxxx-xxxxxx-xxxxxx" autocomplete="off" spellcheck="false"></div>`:''}
+      <div class="field"><label>${mode==='reset'?'New password':'Password'}</label>${pwFieldHtml('au-pass', mode==='login'?'Your password':'6+ characters', mode==='login'?'current-password':'new-password')}</div>
+      <div class="caps-warn" id="au-caps" style="display:none">⇪ Caps Lock is on</div>
       <div class="sync-err" id="au-err"></div>
-      <button class="btn primary" id="au-go" style="width:100%;padding:12px;margin-top:4px">${mode==='login'?'Log in':'Create account'}</button>
-      <div class="auth-switch">${mode==='login'
-        ? `New here? <a data-auswitch="signup">Create an account</a>`
-        : `Already have an account? <a data-auswitch="login">Log in</a>`}</div>
-      <div class="sync-note" style="text-align:center;margin-top:8px">Your tasks stay on this device until you sign in.</div>
+      <button class="btn primary" id="au-go" style="width:100%;padding:12px;margin-top:4px">${labels[mode]}</button>
+      <div class="auth-switch">${
+        mode==='login' ? `New here? <a data-auswitch="signup">Create an account</a><br><a data-auswitch="reset" class="auth-forgot">Forgot password?</a>`
+        : mode==='signup' ? `Already have an account? <a data-auswitch="login">Log in</a>`
+        : `Remembered it? <a data-auswitch="login">Back to log in</a>`}</div>
+      <div class="sync-note" style="text-align:center;margin-top:8px">${mode==='signup'?'You’ll get a one-time recovery code — save it to reset your password later.':'Your tasks stay on this device until you sign in.'}</div>
     </div></div></div>`;
   const err = $('#au-err');
   async function go() {
     const email=($('#au-email')||{}).value?.trim(), pass=($('#au-pass')||{}).value;
     if(!email||!pass){ err.textContent='Enter your email and password.'; return; }
-    const btn=$('#au-go'); btn.disabled=true; btn.textContent=mode==='login'?'Logging in…':'Creating account…'; err.textContent='';
+    if(mode==='reset' && !($('#au-recovery')||{}).value?.trim()){ err.textContent='Enter your recovery code.'; return; }
+    const btn=$('#au-go'); btn.disabled=true; btn.textContent='Working…'; err.textContent='';
     try {
       if (mode==='login') await SYNC.login(email, pass);
-      else await SYNC.signup(email, pass, ($('#au-name')||{}).value?.trim()||'');
-      closeModal(); render(); toast('👋 Signed in as '+(SYNC.name||SYNC.email));
-      handleJoinParam();   // if they arrived via an invite link, complete the join now
-    } catch(e) { btn.disabled=false; btn.textContent=mode==='login'?'Log in':'Create account'; err.textContent=e.message||'Failed'; }
+      else if (mode==='signup') {
+        const d = await SYNC.signup(email, pass, ($('#au-name')||{}).value?.trim()||'');
+        closeModal(); render(); toast('👋 Welcome, '+(SYNC.name||SYNC.email)+'!');
+        if (d && d.recoveryCode) showRecoveryCode(d.recoveryCode, true);
+        handleJoinParam(); return;
+      }
+      else await SYNC.resetPassword(email, $('#au-recovery').value.trim(), pass);
+      closeModal(); render(); toast(mode==='reset'?'🔑 Password reset — you’re signed in':'👋 Signed in as '+(SYNC.name||SYNC.email));
+      handleJoinParam();
+    } catch(e) { btn.disabled=false; btn.textContent=labels[mode]; err.textContent=e.message||'Failed'; }
   }
   $('#au-go').onclick = go;
-  modalRoot.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); }));
+  modalRoot.querySelectorAll('input').forEach(i=>{
+    i.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); const caps=$('#au-caps'); if(caps&&e.getModifierState) caps.style.display=e.getModifierState('CapsLock')?'':'none'; });
+  });
+  modalRoot.querySelectorAll('[data-eye]').forEach(b=>b.onclick=()=>{ const f=$('#'+b.dataset.eye); f.type=f.type==='password'?'text':'password'; b.textContent=f.type==='password'?'👁':'🙈'; });
   modalRoot.querySelectorAll('[data-auswitch]').forEach(a=>a.onclick=()=>openAuthModal(a.dataset.auswitch));
   setTimeout(()=>{ const f=$(mode==='signup'?'#au-name':'#au-email'); if(f)f.focus(); },30);
+}
+// One-time recovery code display (after signup or regeneration).
+function showRecoveryCode(code, fromSignup) {
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal" style="max-width:430px">
+    <div class="modal-head"><div class="crumbs">🔑 Your recovery code</div></div>
+    <div class="modal-body" style="text-align:center">
+      <div class="sync-note" style="margin-bottom:12px">${fromSignup?'Your account is ready! ':''}This code is the <b>only way to reset your password</b> if you forget it. Save it somewhere safe — it won’t be shown again.</div>
+      <div class="rk-code" id="rk-code">${esc(code)}</div>
+      <button class="btn ghost" id="rk-copy" style="margin-top:10px">📋 Copy code</button>
+    </div>
+    <div class="modal-foot"><span style="flex:1"></span><button class="btn primary" data-act="close-modal">I saved it</button></div></div></div>`;
+  $('#rk-copy').onclick=()=>copyText(code);
 }
 function accountMenu(x, y) {
   const pro = SYNC.billing.plan==='pro';

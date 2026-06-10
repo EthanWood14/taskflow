@@ -31,8 +31,8 @@ export class JsonStore {
   }
   async getUserByEmail(email) { return this.db.users[email] || null; }
   async getUserById(id) { return Object.values(this.db.users).find(u => u.id === id) || null; }
-  async createUser({ id, email, hash, name }) {
-    const u = { id, email, hash, name: name || email.split('@')[0], createdAt: Date.now() };
+  async createUser({ id, email, hash, name, recoveryHash }) {
+    const u = { id, email, hash, name: name || email.split('@')[0], recoveryHash: recoveryHash || null, createdAt: Date.now() };
     this.db.users[email] = u;
     // personal workspace
     const ws = { id: newId('ws'), name: 'My Workspace', ownerId: id, createdAt: Date.now(), members: { [id]: 'owner' }, state: null, rev: 0, updatedAt: Date.now() };
@@ -66,7 +66,7 @@ export class JsonStore {
   }
   async removeMember(wsId, userId) { const w = this.db.workspaces[wsId]; if (!w) return false; if (w.members[userId] === 'owner') return false; delete w.members[userId]; this._save(); return true; }
   async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
-  async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; this._save(); return u; }
+  async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; if (fields.recoveryHash) u.recoveryHash = fields.recoveryHash; this._save(); return u; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; if (stripeSubscriptionId !== undefined) u.stripeSubscriptionId = stripeSubscriptionId; this._save(); return u; }
   async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
   async countSeats(ownerId) {
@@ -118,12 +118,13 @@ export class PgStore {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS plan text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash text;
     `);
   }
-  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
+  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,recovery_hash AS "recoveryHash",stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
   async getUserById(id) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE id=$1', [id]); return r.rows[0] || null; }
-  async createUser({ id, email, hash, name }) {
-    await this.pool.query('INSERT INTO users(id,email,hash,name,created_at) VALUES($1,$2,$3,$4,$5)', [id, email, hash, name || email.split('@')[0], Date.now()]);
+  async createUser({ id, email, hash, name, recoveryHash }) {
+    await this.pool.query('INSERT INTO users(id,email,hash,name,recovery_hash,created_at) VALUES($1,$2,$3,$4,$5,$6)', [id, email, hash, name || email.split('@')[0], recoveryHash || null, Date.now()]);
     const wsId = newId('ws');
     await this.pool.query('INSERT INTO workspaces(id,name,owner_id,created_at,state,rev,updated_at) VALUES($1,$2,$3,$4,NULL,0,$4)', [wsId, 'My Workspace', id, Date.now()]);
     await this.pool.query('INSERT INTO memberships(workspace_id,user_id,role) VALUES($1,$2,$3)', [wsId, id, 'owner']);
@@ -160,6 +161,7 @@ export class PgStore {
   async updateUser(id, fields) {
     if (fields.name != null) await this.pool.query('UPDATE users SET name=$2 WHERE id=$1', [id, String(fields.name).slice(0, 60)]);
     if (fields.hash) await this.pool.query('UPDATE users SET hash=$2 WHERE id=$1', [id, fields.hash]);
+    if (fields.recoveryHash) await this.pool.query('UPDATE users SET recovery_hash=$2 WHERE id=$1', [id, fields.recoveryHash]);
     return this.getUserById(id);
   }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) {
