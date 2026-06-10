@@ -67,8 +67,13 @@ export class JsonStore {
   async removeMember(wsId, userId) { const w = this.db.workspaces[wsId]; if (!w) return false; if (w.members[userId] === 'owner') return false; delete w.members[userId]; this._save(); return true; }
   async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
   async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; this._save(); return u; }
-  async setBilling(id, { plan, stripeCustomerId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; this._save(); return u; }
+  async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; if (stripeSubscriptionId !== undefined) u.stripeSubscriptionId = stripeSubscriptionId; this._save(); return u; }
   async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
+  async countSeats(ownerId) {
+    const ids = new Set();
+    for (const w of Object.values(this.db.workspaces)) if (w.ownerId === ownerId) Object.keys(w.members || {}).forEach(id => ids.add(id));
+    return Math.max(1, ids.size);
+  }
   async getWorkspaceMeta(wsId) { const w = this.db.workspaces[wsId]; if (!w) return null; return { ownerId: w.ownerId, members: Object.keys(w.members || {}).length }; }
   async peekInvite(code) { const inv = this.db.invites[code]; return inv ? { wsId: inv.wsId } : null; }
   async deleteUser(id) {
@@ -112,10 +117,11 @@ export class PgStore {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS name text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS plan text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
     `);
   }
-  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
-  async getUserById(id) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId" FROM users WHERE id=$1', [id]); return r.rows[0] || null; }
+  async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
+  async getUserById(id) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE id=$1', [id]); return r.rows[0] || null; }
   async createUser({ id, email, hash, name }) {
     await this.pool.query('INSERT INTO users(id,email,hash,name,created_at) VALUES($1,$2,$3,$4,$5)', [id, email, hash, name || email.split('@')[0], Date.now()]);
     const wsId = newId('ws');
@@ -156,12 +162,17 @@ export class PgStore {
     if (fields.hash) await this.pool.query('UPDATE users SET hash=$2 WHERE id=$1', [id, fields.hash]);
     return this.getUserById(id);
   }
-  async setBilling(id, { plan, stripeCustomerId }) {
+  async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) {
     if (plan != null) await this.pool.query('UPDATE users SET plan=$2 WHERE id=$1', [id, plan]);
     if (stripeCustomerId != null) await this.pool.query('UPDATE users SET stripe_customer_id=$2 WHERE id=$1', [id, stripeCustomerId]);
+    if (stripeSubscriptionId !== undefined) await this.pool.query('UPDATE users SET stripe_subscription_id=$2 WHERE id=$1', [id, stripeSubscriptionId]);
     return this.getUserById(id);
   }
-  async getUserByStripeCustomer(cid) { const r = await this.pool.query('SELECT id,email,hash,name,plan FROM users WHERE stripe_customer_id=$1', [cid]); return r.rows[0] || null; }
+  async getUserByStripeCustomer(cid) { const r = await this.pool.query('SELECT id,email,hash,name,plan,stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE stripe_customer_id=$1', [cid]); return r.rows[0] || null; }
+  async countSeats(ownerId) {
+    const r = await this.pool.query('SELECT count(DISTINCT m.user_id) FROM memberships m JOIN workspaces w ON w.id=m.workspace_id WHERE w.owner_id=$1', [ownerId]);
+    return Math.max(1, Number(r.rows[0].count));
+  }
   async getWorkspaceMeta(wsId) {
     const w = await this.pool.query('SELECT owner_id AS "ownerId" FROM workspaces WHERE id=$1', [wsId]); if (!w.rows[0]) return null;
     const c = await this.pool.query('SELECT count(*) FROM memberships WHERE workspace_id=$1', [wsId]);

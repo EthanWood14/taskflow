@@ -666,6 +666,7 @@
   .pr-feat { font-size:13px; padding:4px 0; color:var(--text-dim); }
   .pr-feat b { color:var(--text); }
   .pr-cur { margin-top:10px; font-size:12px; font-weight:700; color:var(--green); }
+  .pr-seats { background:var(--accent-soft); border-radius:9px; padding:8px 11px; font-size:12.5px; margin-bottom:10px; }
   .pr-note { font-size:12px; color:var(--text-faint); }
   @media (max-width:600px){ .pr-cols { grid-template-columns:1fr; } }
 
@@ -2986,7 +2987,7 @@ const SYNC = {
   clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
   workspaces: [], activeWs: localStorage.getItem('tf.ws') || null,
   ws: null, status: 'off', _suppress: false, _pushTimer: null, online: [], _removed: false,
-  billing: { enabled: false, plan: 'free', priceDisplay: '', freeLimits: { workspaces: 2, members: 5 } },
+  billing: { enabled: false, plan: 'free', priceDisplay: '$1.50 / user / mo', unitCents: 150, seats: 1, freeLimits: { workspaces: 2, members: 5 } },
   get on(){ return !!this.token; },
   get active(){ return (this.workspaces||[]).find(w=>w.id===this.activeWs) || (this.workspaces||[])[0] || null; },
   async api(path, opts={}) {
@@ -3116,7 +3117,10 @@ function wireSyncBox() {
 function openPricing(reason) {
   const b = SYNC.billing || {};
   const lim = b.freeLimits || { workspaces:2, members:5 };
-  const price = b.priceDisplay ? esc(b.priceDisplay) : 'See checkout';
+  const price = b.priceDisplay ? esc(b.priceDisplay) : '$1.50 / user / mo';
+  const unit = (b.unitCents!=null ? b.unitCents : 150)/100;
+  const seats = Math.max(1, b.seats||1);
+  const seatMath = SYNC.on ? `<div class="pr-seats">${seats} member${seats===1?'':'s'} in your workspaces × $${unit.toFixed(2)} = <b>$${(seats*unit).toFixed(2)}/mo</b></div>` : '';
   const canBuy = b.enabled && SYNC.on;
   modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs">💎 TaskFlow Pro</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
@@ -3133,9 +3137,11 @@ function openPricing(reason) {
         </div>
         <div class="pr-card pr-pro">
           <div class="pr-name">Pro <span class="plan-badge pro">💎</span></div><div class="pr-price">${price}</div>
+          ${seatMath}
           <div class="pr-feat">✓ Everything in Free</div>
           <div class="pr-feat">✓ <b>Unlimited</b> cloud workspaces</div>
           <div class="pr-feat">✓ <b>Unlimited</b> members per workspace</div>
+          <div class="pr-feat">✓ <b>Per-seat billing</b> — pay only for people you add; your bill adjusts automatically as members join or leave</div>
           <div class="pr-feat">✓ Priority support</div>
           <div class="pr-feat">✓ Supports development ❤️</div>
           ${SYNC.billing.plan==='pro' ? `<div class="pr-cur">Your current plan</div>`

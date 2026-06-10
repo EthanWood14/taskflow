@@ -25,15 +25,32 @@ const MODE = process.env.DATABASE_URL ? 'pg' : 'json';
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY || '';
 const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
-const PRICE_DISPLAY = process.env.STRIPE_PRICE_DISPLAY || '';
+const PRICE_DISPLAY = process.env.STRIPE_PRICE_DISPLAY || '$1.50 / user / mo';
+const UNIT_CENTS = parseInt(process.env.STRIPE_UNIT_AMOUNT_CENTS || '150', 10); // $1.50 per user per month
 const BILLING_ON = !!(STRIPE_KEY && STRIPE_PRICE_ID);
 if (!BILLING_ON) console.warn('[taskflow] billing disabled — set STRIPE_SECRET_KEY and STRIPE_PRICE_ID to enable');
-async function stripeReq(path, params) {
-  const body = new URLSearchParams(params).toString();
-  const r = await fetch('https://api.stripe.com/v1' + path, { method: 'POST', headers: { Authorization: 'Bearer ' + STRIPE_KEY, 'Content-Type': 'application/x-www-form-urlencoded' }, body });
+async function stripeReq(path, params, method = 'POST') {
+  const opts = { method, headers: { Authorization: 'Bearer ' + STRIPE_KEY } };
+  if (method !== 'GET') { opts.headers['Content-Type'] = 'application/x-www-form-urlencoded'; opts.body = new URLSearchParams(params || {}).toString(); }
+  const r = await fetch('https://api.stripe.com/v1' + path, opts);
   const d = await r.json();
   if (!r.ok) throw new Error((d.error && d.error.message) || 'Stripe error');
   return d;
+}
+// Per-seat billing: keep the owner's subscription quantity in step with how many
+// people are in workspaces they own. Stripe prorates the difference automatically.
+async function syncSeats(ownerId) {
+  try {
+    if (!BILLING_ON || !ownerId) return;
+    const u = await store.getUserById(ownerId);
+    if (!u || u.plan !== 'pro' || !u.stripeSubscriptionId) return;
+    const seats = await store.countSeats(ownerId);
+    const sub = await stripeReq('/subscriptions/' + u.stripeSubscriptionId, null, 'GET');
+    const item = sub.items && sub.items.data && sub.items.data[0];
+    if (!item || item.quantity === seats) return;
+    await stripeReq('/subscriptions/' + u.stripeSubscriptionId, { 'items[0][id]': item.id, 'items[0][quantity]': String(seats), proration_behavior: 'create_prorations' });
+    console.log('[billing] seats for', ownerId, '->', seats);
+  } catch (e) { console.error('[billing] seat sync failed:', e.message); }
 }
 function verifyStripeSig(payloadBuf, header, secret) {
   try {
@@ -64,10 +81,10 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyn
   const obj = (event.data && event.data.object) || {};
   if (event.type === 'checkout.session.completed') {
     const uid = (obj.metadata && obj.metadata.userId) || obj.client_reference_id;
-    if (uid) await store.setBilling(uid, { plan: 'pro', stripeCustomerId: obj.customer });
+    if (uid) { await store.setBilling(uid, { plan: 'pro', stripeCustomerId: obj.customer, stripeSubscriptionId: obj.subscription }); syncSeats(uid); }
   } else if (event.type === 'customer.subscription.deleted') {
     const u = await store.getUserByStripeCustomer(obj.customer);
-    if (u) await store.setBilling(u.id, { plan: 'free' });
+    if (u) await store.setBilling(u.id, { plan: 'free', stripeSubscriptionId: null });
   } else if (event.type === 'customer.subscription.updated') {
     const u = await store.getUserByStripeCustomer(obj.customer);
     if (u) await store.setBilling(u.id, { plan: (obj.status === 'active' || obj.status === 'trialing') ? 'pro' : 'free' });
@@ -105,20 +122,21 @@ app.get('/api/me', asyncH(async (req, res) => {
 // ---------- Billing ----------
 app.get('/api/billing/config', asyncH(async (req, res) => {
   const u = auth(req);
-  let plan = 'free';
-  if (u) plan = await planOf(u.uid);
-  res.json({ enabled: BILLING_ON, plan, priceDisplay: PRICE_DISPLAY, freeLimits: { workspaces: FREE_WS_LIMIT, members: FREE_MEMBER_LIMIT } });
+  let plan = 'free', seats = 1;
+  if (u) { plan = await planOf(u.uid); seats = await store.countSeats(u.uid); }
+  res.json({ enabled: BILLING_ON, plan, priceDisplay: PRICE_DISPLAY, unitCents: UNIT_CENTS, seats, freeLimits: { workspaces: FREE_WS_LIMIT, members: FREE_MEMBER_LIMIT } });
 }));
 
 app.post('/api/billing/checkout', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
   if (!BILLING_ON) return res.status(400).json({ error: 'Billing is not configured on this server yet — see BACKEND.md (set STRIPE_SECRET_KEY and STRIPE_PRICE_ID).' });
   const me = await store.getUserById(u.uid);
+  const seats = await store.countSeats(u.uid);   // $1.50 × every member in workspaces you own
   const origin = req.headers.origin || ('https://' + req.headers.host);
   const params = {
     mode: 'subscription',
     'line_items[0][price]': STRIPE_PRICE_ID,
-    'line_items[0][quantity]': '1',
+    'line_items[0][quantity]': String(seats),
     success_url: origin + '/?billing=success',
     cancel_url: origin + '/?billing=cancel',
     'metadata[userId]': u.uid,
@@ -208,7 +226,7 @@ app.post('/api/workspaces/:id/members/remove', asyncH(async (req, res) => {
   if ((await store.role(u.uid, req.params.id)) !== 'owner') return res.status(403).json({ error: 'Only the owner can remove members' });
   const ok = await store.removeMember(req.params.id, String(req.body.userId || ''));
   if (!ok) return res.status(400).json({ error: "Can't remove that member" });
-  broadcast(req.params.id, null, -1); kickUser(req.params.id, req.body.userId); res.json({ ok: true });
+  broadcast(req.params.id, null, -1); kickUser(req.params.id, req.body.userId); syncSeats(u.uid); res.json({ ok: true });
 }));
 
 app.post('/api/workspaces/:id/leave', asyncH(async (req, res) => {
@@ -216,28 +234,28 @@ app.post('/api/workspaces/:id/leave', asyncH(async (req, res) => {
   const role = await store.role(u.uid, req.params.id);
   if (!role) return res.status(400).json({ error: 'Not a member' });
   if (role === 'owner') return res.status(400).json({ error: "Owners can't leave — delete the workspace instead" });
-  await store.removeMember(req.params.id, u.uid); kickUser(req.params.id, u.uid); res.json({ ok: true });
+  const meta = await store.getWorkspaceMeta(req.params.id);
+  await store.removeMember(req.params.id, u.uid); kickUser(req.params.id, u.uid);
+  if (meta) syncSeats(meta.ownerId);   // seat freed -> owner's bill shrinks
+  res.json({ ok: true });
 }));
 
 app.post('/api/workspaces/:id/delete', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
   if ((await store.role(u.uid, req.params.id)) !== 'owner') return res.status(403).json({ error: 'Only the owner can delete this workspace' });
-  await store.deleteWorkspace(req.params.id); broadcast(req.params.id, null, -1); closeRoom(req.params.id); res.json({ ok: true });
+  await store.deleteWorkspace(req.params.id); broadcast(req.params.id, null, -1); closeRoom(req.params.id); syncSeats(u.uid); res.json({ ok: true });
 }));
 
 app.post('/api/join', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
   const code = String(req.body.code || '').trim();
-  if (BILLING_ON) {
-    const inv = await store.peekInvite(code);
-    if (inv) {
-      const meta = await store.getWorkspaceMeta(inv.wsId);
-      if (meta && meta.members >= FREE_MEMBER_LIMIT && (await planOf(meta.ownerId)) !== 'pro')
-        return res.status(402).json({ error: `This workspace is at the free plan's ${FREE_MEMBER_LIMIT}-member limit — its owner can upgrade to Pro for unlimited members.`, upgrade: true });
-    }
-  }
+  const inv = await store.peekInvite(code);
+  const meta = inv ? await store.getWorkspaceMeta(inv.wsId) : null;
+  if (BILLING_ON && meta && meta.members >= FREE_MEMBER_LIMIT && (await planOf(meta.ownerId)) !== 'pro')
+    return res.status(402).json({ error: `This workspace is at the free plan's ${FREE_MEMBER_LIMIT}-member limit — its owner can upgrade to Pro for unlimited members.`, upgrade: true });
   const ws = await store.consumeInvite(u.uid, code);
   if (!ws) return res.status(404).json({ error: 'Invalid or expired invite code' });
+  if (meta) syncSeats(meta.ownerId);   // new member -> bill one more seat ($1.50)
   res.json({ workspace: ws });
 }));
 

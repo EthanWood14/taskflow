@@ -35,18 +35,20 @@ It also serves the static app, so it's **one Railway service**. The app still wo
 
 ## 💳 Payments (Stripe) — optional, fully built in
 
-The server ships with a complete **Stripe** subscription integration: secure Checkout, webhook-driven plan updates, a customer billing portal, and plan gating (Free = 2 workspaces / 5 members each · **Pro** = unlimited). It activates automatically once you add your Stripe keys — until then the upgrade UI hides itself and everything stays free/unlimited-by-default.
+The server ships with a complete **Stripe** subscription integration: secure Checkout, webhook-driven plan updates, a customer billing portal, and plan gating (Free = 2 workspaces / 5 members each · **Pro** = unlimited, billed **per seat at $1.50/user/month**). It activates automatically once you add your Stripe keys — until then the upgrade UI hides itself and everything stays free/unlimited-by-default.
+
+**Per-seat billing:** a Pro subscriber pays $1.50/month for every person in workspaces they own (themselves included — 1 seat minimum). Checkout starts with the current seat count, and the server **auto-syncs the subscription quantity** whenever members join, are removed, leave, or a workspace is deleted — Stripe prorates the difference on the next invoice.
 
 **To turn it on (you do this part — it's your Stripe account and keys):**
 1. Create a Stripe account at **stripe.com** (or use an existing one). Start in **Test mode**.
-2. **Create a product**: Dashboard → Product catalog → *Add product* → e.g. "TaskFlow Pro", **recurring** price (say $5/month). Copy the **price ID** (`price_…`).
+2. **Create a product**: Dashboard → Product catalog → *Add product* → name "TaskFlow Pro", **recurring monthly** price of **$1.50** (Stripe multiplies it by the seat quantity automatically). Copy the **price ID** (`price_…`).
 3. **Get your secret key**: Dashboard → Developers → API keys → **Secret key** (`sk_test_…`).
 4. **Create a webhook**: Developers → Webhooks → *Add endpoint* → URL `https://YOUR-APP.up.railway.app/api/billing/webhook` → select events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`. Copy the **signing secret** (`whsec_…`).
 5. In **Railway → your service → Variables**, add:
    - `STRIPE_SECRET_KEY` = `sk_test_…`
    - `STRIPE_PRICE_ID` = `price_…`
    - `STRIPE_WEBHOOK_SECRET` = `whsec_…`
-   - `STRIPE_PRICE_DISPLAY` = `$5/mo` *(optional, shown in the pricing modal)*
+   - `STRIPE_PRICE_DISPLAY` = `$1.50 / user / mo` *(optional — this is already the default shown in the pricing modal)*
 6. Redeploy. The **💎 Upgrade to Pro** button appears in ⚙ Settings → account, and the pricing modal goes live.
 7. **Test it** with Stripe's test card `4242 4242 4242 4242` (any future expiry/CVC). The webhook flips your account to Pro; "Manage billing" opens Stripe's customer portal (cancel/update card there). When ready, switch the keys to live mode.
 
