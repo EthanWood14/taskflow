@@ -671,6 +671,25 @@
   .pr-note { font-size:12px; color:var(--text-faint); }
   @media (max-width:600px){ .pr-cols { grid-template-columns:1fr; } }
 
+  /* ===== Sidebar account bar + auth modal ===== */
+  .sb-account { display:flex; align-items:center; gap:10px; padding:10px 12px; margin:6px 10px 10px;
+    border:1px solid var(--border); border-radius:13px; background:var(--bg); cursor:pointer;
+    box-shadow:var(--shadow-sm); transition:border-color .12s, transform .1s; }
+  .sb-account:hover { border-color:var(--accent); transform:translateY(-1px); }
+  .sb-account.signin { background:var(--accent-soft); border-color:transparent; }
+  .sba-av { width:32px; height:32px; min-width:32px; font-size:14px; }
+  .sba-signin-ico { width:32px; height:32px; min-width:32px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font-size:15px; }
+  .sba-info { flex:1; min-width:0; }
+  .sba-name { font-weight:700; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sba-ws { font-size:11px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sba-more { color:var(--text-faint); font-size:16px; }
+  .auth-logo { display:flex; align-items:center; justify-content:center; gap:8px; font-weight:800; font-size:19px; margin:2px 0 16px;
+    background:var(--brand-grad); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .auth-logo .dot { width:28px; height:28px; border-radius:9px; background:var(--brand-grad); color:#fff; -webkit-text-fill-color:#fff; display:grid; place-items:center; font-size:15px; }
+  .auth-switch { text-align:center; margin-top:14px; font-size:13px; color:var(--text-dim); }
+  .auth-switch a { color:var(--accent); font-weight:700; cursor:pointer; }
+  .auth-switch a:hover { text-decoration:underline; }
+
   .acct-head { display:flex; align-items:center; gap:11px; margin-bottom:10px; }
   .acct-av { width:42px; height:42px; min-width:42px; border-radius:50%; background:var(--brand-grad); color:#fff; display:grid; place-items:center; font-size:18px; font-weight:800; }
   .acct-name { font-weight:700; font-size:15px; display:flex; align-items:center; gap:6px; }
@@ -1056,7 +1075,25 @@ function renderSidebar() {
       <div class="sb-section-head"><span>Data</span></div>
       <div class="nav-item ${navActive('import')}" data-view="import"><span class="ico">⤓</span><span class="label">Import / Export</span></div>
       ${location.protocol.startsWith('http')?`<div class="nav-item" data-act="open-pricing"><span class="ico">💎</span><span class="label">Go Pro</span>${SYNC.billing.plan==='pro'?'<span class="count">active</span>':''}</div>`:''}
-    </div>`;
+    </div>
+    ${accountBarHtml()}`;
+}
+
+// Persistent account chip at the bottom of the sidebar — one-click sign in/out.
+function accountBarHtml() {
+  if (!location.protocol.startsWith('http')) return '';
+  if (typeof SYNC !== 'undefined' && SYNC.on) {
+    const nm = SYNC.name || SYNC.email || '?';
+    const pro = SYNC.billing.plan === 'pro';
+    return `<div class="sb-account" data-act="account-menu" title="Account">
+      <span class="acct-av sba-av">${esc(nm[0].toUpperCase())}</span>
+      <div class="sba-info"><div class="sba-name">${esc(nm)} ${pro?'<span class="plan-badge pro">💎</span>':''}</div>
+      <div class="sba-ws">${esc((SYNC.active||{}).name||'Synced')}</div></div>
+      <span class="sba-more">⋯</span></div>`;
+  }
+  return `<div class="sb-account signin" data-act="open-auth">
+    <span class="sba-signin-ico">👤</span><div class="sba-info"><div class="sba-name">Sign in</div>
+    <div class="sba-ws">Sync across devices</div></div><span class="sba-more">›</span></div>`;
 }
 
 // ============================================================
@@ -2083,6 +2120,8 @@ function wireSidebar() {
     else if(a==='open-templates'){ ui.drawerOpen=false; openTemplatePicker(); }
     else if(a==='bulk-add'){ ui.drawerOpen=false; openBulkAdd(); }
     else if(a==='open-pricing'){ ui.drawerOpen=false; openPricing(); }
+    else if(a==='open-auth'){ ui.drawerOpen=false; openAuthModal('login'); }
+    else if(a==='account-menu'){ accountMenu(e.clientX, e.clientY); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
   });
@@ -2587,6 +2626,9 @@ function openCommandPalette() {
     {icon:'📁', label:'New folder', run:()=>openFolderModal()},
     {icon:'☁', label:'Cloud sync / account', run:()=>openSettings()},
     {icon:'💎', label:'Upgrade to Pro / pricing', run:()=>openPricing()},
+    ...(location.protocol.startsWith('http') ? (SYNC.on
+      ? [{icon:'🚪', label:'Sign out ('+(SYNC.email||'')+')', run:()=>{ SYNC.logout(); toast('Signed out'); }}]
+      : [{icon:'👤', label:'Sign in / create account', run:()=>openAuthModal('login')}]) : []),
     {icon:'⚙', label:'Open Settings', run:()=>openSettings()},
     {icon:'🎨', label:'Change theme & accent', run:()=>openSettings()},
     {icon:'☾', label:'Toggle dark mode', run:()=>{ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); render(); }},
@@ -3116,6 +3158,50 @@ function wireSyncBox() {
   const lv=$('#sync-leavews'); if(lv) lv.onclick=async()=>{ if(confirm('Leave this workspace?')){ try{ await SYNC.leave(); refresh(); render(); toast('Left workspace'); }catch(e){ toast('Failed: '+e.message); } } };
   if($('#sync-members')) renderMembersList();
 }
+// ---------- Quick auth (sign in / sign up modal) ----------
+function openAuthModal(mode) {
+  mode = mode === 'signup' ? 'signup' : 'login';
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal" style="max-width:400px">
+    <div class="modal-head"><div class="crumbs">${mode==='login'?'Welcome back':'Create your account'}</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">
+      <div class="auth-logo"><span class="dot">✓</span>${esc(state.settings.workspaceName||'TaskFlow')}</div>
+      ${mode==='signup'?`<div class="field"><label>Name</label><input id="au-name" type="text" placeholder="Your name" autocomplete="name"></div>`:''}
+      <div class="field"><label>Email</label><input id="au-email" type="email" placeholder="you@email.com" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input id="au-pass" type="password" placeholder="${mode==='signup'?'6+ characters':'Your password'}" autocomplete="${mode==='signup'?'new-password':'current-password'}"></div>
+      <div class="sync-err" id="au-err"></div>
+      <button class="btn primary" id="au-go" style="width:100%;padding:12px;margin-top:4px">${mode==='login'?'Log in':'Create account'}</button>
+      <div class="auth-switch">${mode==='login'
+        ? `New here? <a data-auswitch="signup">Create an account</a>`
+        : `Already have an account? <a data-auswitch="login">Log in</a>`}</div>
+      <div class="sync-note" style="text-align:center;margin-top:8px">Your tasks stay on this device until you sign in.</div>
+    </div></div></div>`;
+  const err = $('#au-err');
+  async function go() {
+    const email=($('#au-email')||{}).value?.trim(), pass=($('#au-pass')||{}).value;
+    if(!email||!pass){ err.textContent='Enter your email and password.'; return; }
+    const btn=$('#au-go'); btn.disabled=true; btn.textContent=mode==='login'?'Logging in…':'Creating account…'; err.textContent='';
+    try {
+      if (mode==='login') await SYNC.login(email, pass);
+      else await SYNC.signup(email, pass, ($('#au-name')||{}).value?.trim()||'');
+      closeModal(); render(); toast('👋 Signed in as '+(SYNC.name||SYNC.email));
+      handleJoinParam();   // if they arrived via an invite link, complete the join now
+    } catch(e) { btn.disabled=false; btn.textContent=mode==='login'?'Log in':'Create account'; err.textContent=e.message||'Failed'; }
+  }
+  $('#au-go').onclick = go;
+  modalRoot.querySelectorAll('input').forEach(i=>i.addEventListener('keydown',e=>{ if(e.key==='Enter') go(); }));
+  modalRoot.querySelectorAll('[data-auswitch]').forEach(a=>a.onclick=()=>openAuthModal(a.dataset.auswitch));
+  setTimeout(()=>{ const f=$(mode==='signup'?'#au-name':'#au-email'); if(f)f.focus(); },30);
+}
+function accountMenu(x, y) {
+  const pro = SYNC.billing.plan==='pro';
+  showMenu(x, y, [
+    {label:'Account & sync settings', icon:'⚙', fn:()=>openSettings()},
+    {label: pro?'Manage billing':'Go Pro — free trial', icon:'💎', fn:()=> pro ? SYNC.portal().catch(e=>toast(e.message)) : openPricing()},
+    'sep',
+    {label:'Sign out', icon:'🚪', danger:true, fn:()=>{ SYNC.logout(); toast('Signed out — your data stays on this device'); }},
+  ]);
+}
+
 // ---------- Pricing / upgrade ----------
 function openPricing(reason) {
   const b = SYNC.billing || {};
@@ -3151,13 +3237,15 @@ function openPricing(reason) {
           <div class="pr-feat">✓ Supports development ❤️</div>
           ${SYNC.billing.plan==='pro' ? `<div class="pr-cur">Your current plan</div>`
             : canBuy ? `<button class="btn primary" id="pr-buy" style="width:100%;margin-top:10px">${trial>0?'Start '+trial+'-day free trial':'Upgrade — secure checkout'}</button>`
-            : `<div class="pr-note">${SYNC.on ? 'Billing is not configured on this server yet. The owner needs to add Stripe keys (see BACKEND.md).' : 'Log in first (⚙ Settings → Cloud sync), then upgrade.'}</div>`}
+            : SYNC.on ? `<div class="pr-note">Billing is not configured on this server yet. The owner needs to add Stripe keys (see BACKEND.md).</div>`
+            : `<button class="btn primary" id="pr-login" style="width:100%;margin-top:10px">Sign in to upgrade</button>`}
         </div>
       </div>
       <div class="pr-note" style="margin-top:12px">Payments are processed by <b>Stripe</b> — card details never touch this server. Cancel anytime from “Manage billing”.</div>
     </div>
     <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button></div></div></div>`;
   const buy=$('#pr-buy'); if(buy){ const lbl=buy.textContent; buy.onclick=async()=>{ buy.disabled=true; buy.textContent='Opening checkout…'; try{ await SYNC.upgrade(); }catch(e){ buy.disabled=false; buy.textContent=lbl; toast('Checkout: '+e.message); } }; }
+  const plog=$('#pr-login'); if(plog) plog.onclick=()=>openAuthModal('login');
 }
 // Public pricing page: https://your-app/pricing (or ?pricing) opens the plans view for anyone, logged in or not.
 function handlePricingPath() {
@@ -3202,7 +3290,7 @@ function initSync() {
 }
 function handleJoinParam() {
   const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;
-  if (!SYNC.on) { toast('Open ⚙ Settings → Cloud sync and log in to join this shared workspace'); return; }
+  if (!SYNC.on) { toast('Sign in to join this shared workspace'); if(!modalRoot.innerHTML) openAuthModal('login'); return; }
   SYNC.join(m[1]).then(w=>{ toast('🤝 Joined “'+w.name+'”'); history.replaceState(null,'',location.pathname); render(); }).catch(e=>toast('Join failed: '+e.message));
 }
 
