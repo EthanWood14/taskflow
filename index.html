@@ -667,6 +667,7 @@
   .pr-feat b { color:var(--text); }
   .pr-cur { margin-top:10px; font-size:12px; font-weight:700; color:var(--green); }
   .pr-seats { background:var(--accent-soft); border-radius:9px; padding:8px 11px; font-size:12.5px; margin-bottom:10px; }
+  .pr-trial { background:rgba(16,185,129,.12); color:var(--green); border-radius:9px; padding:8px 11px; font-size:12.5px; font-weight:700; margin-bottom:10px; }
   .pr-note { font-size:12px; color:var(--text-faint); }
   @media (max-width:600px){ .pr-cols { grid-template-columns:1fr; } }
 
@@ -1054,6 +1055,7 @@ function renderSidebar() {
 
       <div class="sb-section-head"><span>Data</span></div>
       <div class="nav-item ${navActive('import')}" data-view="import"><span class="ico">⤓</span><span class="label">Import / Export</span></div>
+      ${location.protocol.startsWith('http')?`<div class="nav-item" data-act="open-pricing"><span class="ico">💎</span><span class="label">Go Pro</span>${SYNC.billing.plan==='pro'?'<span class="count">active</span>':''}</div>`:''}
     </div>`;
 }
 
@@ -2080,6 +2082,7 @@ function wireSidebar() {
     else if(a==='weekly-review'){ ui.drawerOpen=false; openWeeklyReview(); }
     else if(a==='open-templates'){ ui.drawerOpen=false; openTemplatePicker(); }
     else if(a==='bulk-add'){ ui.drawerOpen=false; openBulkAdd(); }
+    else if(a==='open-pricing'){ ui.drawerOpen=false; openPricing(); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
   });
@@ -2987,7 +2990,7 @@ const SYNC = {
   clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
   workspaces: [], activeWs: localStorage.getItem('tf.ws') || null,
   ws: null, status: 'off', _suppress: false, _pushTimer: null, online: [], _removed: false,
-  billing: { enabled: false, plan: 'free', priceDisplay: '$1.50 / user / mo', unitCents: 150, seats: 1, freeLimits: { workspaces: 2, members: 5 } },
+  billing: { enabled: false, plan: 'free', priceDisplay: '$1.50 / user / mo', unitCents: 150, trialDays: 14, seats: 1, freeLimits: { workspaces: 2, members: 5 } },
   get on(){ return !!this.token; },
   get active(){ return (this.workspaces||[]).find(w=>w.id===this.activeWs) || (this.workspaces||[])[0] || null; },
   async api(path, opts={}) {
@@ -3121,6 +3124,7 @@ function openPricing(reason) {
   const unit = (b.unitCents!=null ? b.unitCents : 150)/100;
   const seats = Math.max(1, b.seats||1);
   const seatMath = SYNC.on ? `<div class="pr-seats">${seats} member${seats===1?'':'s'} in your workspaces × $${unit.toFixed(2)} = <b>$${(seats*unit).toFixed(2)}/mo</b></div>` : '';
+  const trial = b.trialDays!=null ? b.trialDays : 14;
   const canBuy = b.enabled && SYNC.on;
   modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs">💎 TaskFlow Pro</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
@@ -3137,6 +3141,7 @@ function openPricing(reason) {
         </div>
         <div class="pr-card pr-pro">
           <div class="pr-name">Pro <span class="plan-badge pro">💎</span></div><div class="pr-price">${price}</div>
+          ${trial>0?`<div class="pr-trial">🎁 ${trial}-day free trial — $0 today, cancel anytime</div>`:''}
           ${seatMath}
           <div class="pr-feat">✓ Everything in Free</div>
           <div class="pr-feat">✓ <b>Unlimited</b> cloud workspaces</div>
@@ -3145,14 +3150,22 @@ function openPricing(reason) {
           <div class="pr-feat">✓ Priority support</div>
           <div class="pr-feat">✓ Supports development ❤️</div>
           ${SYNC.billing.plan==='pro' ? `<div class="pr-cur">Your current plan</div>`
-            : canBuy ? `<button class="btn primary" id="pr-buy" style="width:100%;margin-top:10px">Upgrade — secure checkout</button>`
+            : canBuy ? `<button class="btn primary" id="pr-buy" style="width:100%;margin-top:10px">${trial>0?'Start '+trial+'-day free trial':'Upgrade — secure checkout'}</button>`
             : `<div class="pr-note">${SYNC.on ? 'Billing is not configured on this server yet. The owner needs to add Stripe keys (see BACKEND.md).' : 'Log in first (⚙ Settings → Cloud sync), then upgrade.'}</div>`}
         </div>
       </div>
       <div class="pr-note" style="margin-top:12px">Payments are processed by <b>Stripe</b> — card details never touch this server. Cancel anytime from “Manage billing”.</div>
     </div>
     <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Close</button></div></div></div>`;
-  const buy=$('#pr-buy'); if(buy) buy.onclick=async()=>{ buy.disabled=true; buy.textContent='Opening checkout…'; try{ await SYNC.upgrade(); }catch(e){ buy.disabled=false; buy.textContent='Upgrade — secure checkout'; toast('Checkout: '+e.message); } };
+  const buy=$('#pr-buy'); if(buy){ const lbl=buy.textContent; buy.onclick=async()=>{ buy.disabled=true; buy.textContent='Opening checkout…'; try{ await SYNC.upgrade(); }catch(e){ buy.disabled=false; buy.textContent=lbl; toast('Checkout: '+e.message); } }; }
+}
+// Public pricing page: https://your-app/pricing (or ?pricing) opens the plans view for anyone, logged in or not.
+function handlePricingPath() {
+  const byPath = location.pathname.replace(/\/+$/,'') === '/pricing';
+  const byQuery = /[?&]pricing\b/.test(location.search);
+  if (!byPath && !byQuery) return;
+  history.replaceState(null, '', '/');
+  setTimeout(()=>openPricing(), 250);
 }
 function handleBillingParam() {
   const m = location.search.match(/[?&]billing=(success|cancel)/); if(!m) return;
@@ -3185,6 +3198,7 @@ function initSync() {
     }).catch(()=>{ SYNC.status='off'; });
   } else { handleJoinParam(); }
   handleBillingParam();
+  handlePricingPath();
 }
 function handleJoinParam() {
   const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;

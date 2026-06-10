@@ -27,6 +27,7 @@ const STRIPE_PRICE_ID = process.env.STRIPE_PRICE_ID || '';
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
 const PRICE_DISPLAY = process.env.STRIPE_PRICE_DISPLAY || '$1.50 / user / mo';
 const UNIT_CENTS = parseInt(process.env.STRIPE_UNIT_AMOUNT_CENTS || '150', 10); // $1.50 per user per month
+const TRIAL_DAYS = parseInt(process.env.STRIPE_TRIAL_DAYS || '14', 10);          // 14-day free trial (0 disables)
 const BILLING_ON = !!(STRIPE_KEY && STRIPE_PRICE_ID);
 if (!BILLING_ON) console.warn('[taskflow] billing disabled — set STRIPE_SECRET_KEY and STRIPE_PRICE_ID to enable');
 async function stripeReq(path, params, method = 'POST') {
@@ -124,7 +125,7 @@ app.get('/api/billing/config', asyncH(async (req, res) => {
   const u = auth(req);
   let plan = 'free', seats = 1;
   if (u) { plan = await planOf(u.uid); seats = await store.countSeats(u.uid); }
-  res.json({ enabled: BILLING_ON, plan, priceDisplay: PRICE_DISPLAY, unitCents: UNIT_CENTS, seats, freeLimits: { workspaces: FREE_WS_LIMIT, members: FREE_MEMBER_LIMIT } });
+  res.json({ enabled: BILLING_ON, plan, priceDisplay: PRICE_DISPLAY, unitCents: UNIT_CENTS, trialDays: TRIAL_DAYS, seats, freeLimits: { workspaces: FREE_WS_LIMIT, members: FREE_MEMBER_LIMIT } });
 }));
 
 app.post('/api/billing/checkout', asyncH(async (req, res) => {
@@ -142,6 +143,7 @@ app.post('/api/billing/checkout', asyncH(async (req, res) => {
     'metadata[userId]': u.uid,
     client_reference_id: u.uid,
   };
+  if (TRIAL_DAYS > 0 && !(me && me.stripeSubscriptionId)) params['subscription_data[trial_period_days]'] = String(TRIAL_DAYS); // trial for first-time subscribers only
   if (me && me.stripeCustomerId) params.customer = me.stripeCustomerId; else params.customer_email = u.email;
   const session = await stripeReq('/checkout/sessions', params);
   res.json({ url: session.url });

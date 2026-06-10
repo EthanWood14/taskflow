@@ -39,6 +39,10 @@ The server ships with a complete **Stripe** subscription integration: secure Che
 
 **Per-seat billing:** a Pro subscriber pays $1.50/month for every person in workspaces they own (themselves included — 1 seat minimum). Checkout starts with the current seat count, and the server **auto-syncs the subscription quantity** whenever members join, are removed, leave, or a workspace is deleted — Stripe prorates the difference on the next invoice.
 
+**Free trial:** first-time subscribers get a **14-day free trial** ($0 today, card collected by Stripe, cancel anytime). Configure with `STRIPE_TRIAL_DAYS` (default `14`, set `0` to disable). Returning subscribers (who already had a subscription) skip the trial.
+
+**Public pricing page:** share `https://YOUR-APP.up.railway.app/pricing` — it opens the plans view for anyone, logged in or not. There's also a 💎 **Go Pro** entry in the sidebar.
+
 **To turn it on (you do this part — it's your Stripe account and keys):**
 1. Create a Stripe account at **stripe.com** (or use an existing one). Start in **Test mode**.
 2. **Create a product**: Dashboard → Product catalog → *Add product* → name "TaskFlow Pro", **recurring monthly** price of **$1.50** (Stripe multiplies it by the seat quantity automatically). Copy the **price ID** (`price_…`).
