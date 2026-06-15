@@ -121,6 +121,9 @@
   .nav-item .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-item .count { color: var(--text-faint); font-size: 12px; }
   .nav-item .proj-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin: 0 5px; }
+  /* one-shot actions (open a dialog) read differently from navigable views */
+  .nav-item.is-action .label { color: var(--text-dim); }
+  .nav-item.is-action:hover .label { color: var(--text); }
   .sb-section-head {
     display: flex; align-items: center; gap: 4px;
     padding: 14px 8px 4px; color: var(--text-dim);
@@ -620,8 +623,12 @@
   .rm-sticky-top { position:sticky; top:0; z-index:2; }
   .rm-sticky-left { position:sticky; left:0; z-index:3; }
   .rm-sticky-tl { position:sticky; left:0; top:0; z-index:5; }
-  .rm-rowhead { background:var(--bg-alt); padding:12px; font-weight:700; font-size:13px; display:flex; align-items:center; gap:7px; min-width:0; }
+  .rm-rowhead { background:var(--bg-alt); padding:11px 12px; font-weight:700; font-size:13px; display:flex; align-items:center; gap:7px; min-width:0; }
   .rm-rowhead .proj-dot { flex-shrink:0; }
+  .rm-rowhead.rm-projhead { background:var(--hover); font-size:13.5px; border-top:2px solid var(--border); }
+  .rm-rowhead.rm-projhead b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rm-rowhead.rm-sechead { padding-left:24px; font-weight:600; font-size:12.5px; color:var(--text-dim); }
+  .rm-secdot { width:6px; height:6px; border-radius:50%; background:var(--text-faint); flex-shrink:0; }
   .rm-cell { background:var(--bg); padding:7px; min-height:62px; display:flex; flex-direction:column; gap:5px; transition:background .12s; }
   .rm-cell.rm-backlog { background:var(--bg-alt); }
   .rm-cell.rm-nowcol { background:linear-gradient(var(--accent-soft),var(--accent-soft)) padding-box; }
@@ -924,7 +931,7 @@ function advanceRecurrence(dateStr, rule) {
 // ============================================================
 const STORE_KEY = 'taskflow.v1';
 let state = migrate(load() || seed());
-let ui = { view: 'today', projectId: null, labelName: null, filterId: null, search: '', sidebarCollapsed: false, collapsedSections: {}, drawerOpen: false, mSearch: false, selected: new Set(), calMonth: null, statRange: 14 };
+let ui = { view: 'today', projectId: null, labelName: null, filterId: null, search: '', sidebarCollapsed: false, collapsedSections: { browse: true, track: true, account: true }, drawerOpen: false, mSearch: false, selected: new Set(), calMonth: null, statRange: 14 };
 
 function persist() { localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
 function load() { try { const r = localStorage.getItem(STORE_KEY); return r? JSON.parse(r): null; } catch(e){ return null; } }
@@ -1064,7 +1071,12 @@ function renderSidebar() {
       <span class="label">${esc(f.name)}</span>
     </div>`).join('');
 
-  const secCol = (key) => ui.collapsedSections[key] ? 'collapsed' : '';
+  // Auto-expand the group that owns the current view so the active item is never hidden.
+  const VIEW_GROUP = { all:'browse', backlog:'browse', completed:'browse', stats:'track', reports:'track', goals:'track', achievements:'track', activity:'track', import:'account', project:'projects', label:'labels', filter:'filters' };
+  const activeGrp = VIEW_GROUP[ui.view];
+  const grpOpen = (key) => activeGrp===key || !ui.collapsedSections[key];   // true => visible
+  const secCol = (key) => grpOpen(key) ? '' : 'collapsed';
+  const grpStyle = (key) => grpOpen(key) ? '' : 'display:none';
   sb.innerHTML = `
     <div class="sb-header">
       <div class="logo"><span class="dot">✓</span>${esc(state.settings.workspaceName||'TaskFlow')}</div>
@@ -1077,27 +1089,9 @@ function renderSidebar() {
     <div class="sb-scroll">
       <button class="add-task-btn" data-act="quick-add"><span class="plus">+</span> Add task</button>
       ${karmaWidgetHtml()}
-      <div class="nav-item ${navActive('today')}" data-view="today"><span class="ico">📅</span><span class="label">Today</span>${c.today?`<span class="count">${c.today}</span>`:''}</div>
+      <div class="nav-item ${navActive('today')}" data-view="today"><span class="ico">☀️</span><span class="label">Today</span>${c.today?`<span class="count">${c.today}</span>`:''}</div>
       <div class="nav-item ${navActive('upcoming')}" data-view="upcoming"><span class="ico">🗓</span><span class="label">Upcoming</span>${c.upcoming?`<span class="count">${c.upcoming}</span>`:''}</div>
       <div class="nav-item ${navActive('inbox')}" data-view="inbox"><span class="ico">📥</span><span class="label">Inbox</span>${c.inbox?`<span class="count">${c.inbox}</span>`:''}</div>
-      <div class="nav-item ${navActive('all')}" data-view="all"><span class="ico">🗂</span><span class="label">All tasks</span></div>
-      <div class="nav-item ${navActive('completed')}" data-view="completed"><span class="ico">✅</span><span class="label">Completed</span></div>
-
-      <div class="sb-section-head"><span>Views</span></div>
-      <div class="nav-item ${navActive('roadmap')}" data-view="roadmap"><span class="ico">🗺️</span><span class="label">Roadmap</span></div>
-      <div class="nav-item ${navActive('calendar')}" data-view="calendar"><span class="ico">📆</span><span class="label">Calendar</span></div>
-      <div class="nav-item ${navActive('planner')}" data-view="planner"><span class="ico">⏰</span><span class="label">Day Planner</span></div>
-      <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
-      <div class="nav-item ${navActive('stats')}" data-view="stats"><span class="ico">📊</span><span class="label">Stats</span></div>
-      <div class="nav-item ${navActive('achievements')}" data-view="achievements"><span class="ico">🏅</span><span class="label">Achievements</span>${achUnlockedCount()?`<span class="count">${achUnlockedCount()}/${ACHIEVEMENTS.length}</span>`:''}</div>
-      <div class="nav-item ${navActive('timeline')}" data-view="timeline"><span class="ico">📐</span><span class="label">Timeline</span></div>
-      <div class="nav-item ${navActive('backlog')}" data-view="backlog"><span class="ico">🗃️</span><span class="label">Backlog</span></div>
-      <div class="nav-item ${navActive('goals')}" data-view="goals"><span class="ico">🎯</span><span class="label">Goals</span>${(state.goals||[]).length?`<span class="count">${state.goals.length}</span>`:''}</div>
-      <div class="nav-item ${navActive('reports')}" data-view="reports"><span class="ico">📈</span><span class="label">Reports</span></div>
-      <div class="nav-item ${navActive('activity')}" data-view="activity"><span class="ico">📜</span><span class="label">Activity</span></div>
-      <div class="nav-item" data-act="weekly-review"><span class="ico">🔄</span><span class="label">Weekly Review</span></div>
-      <div class="nav-item" data-act="open-templates"><span class="ico">📋</span><span class="label">Templates</span>${(state.templates||[]).length?`<span class="count">${state.templates.length}</span>`:''}</div>
-      <div class="nav-item" data-act="bulk-add"><span class="ico">➕</span><span class="label">Bulk add</span></div>
 
       <div class="sb-section-head">
         <span class="caret ${secCol('projects')}" data-caret="projects">▾</span>
@@ -1105,25 +1099,59 @@ function renderSidebar() {
         <button class="icon-btn" data-act="add-folder" title="Add folder">🗀</button>
         <button class="icon-btn" data-act="add-project" title="Add project">+</button>
       </div>
-      <div data-group="projects" style="${ui.collapsedSections.projects?'display:none':''}">${projItems || '<div class="nav-item" style="color:var(--text-faint)">No projects</div>'}</div>
+      <div data-group="projects" style="${grpStyle('projects')}">${projItems || '<div class="nav-item" style="color:var(--text-faint)">No projects</div>'}</div>
+
+      <div class="sb-section-head"><span class="caret ${secCol('plan')}" data-caret="plan">▾</span><span>Plan &amp; schedule</span></div>
+      <div data-group="plan" style="${grpStyle('plan')}">
+        <div class="nav-item ${navActive('planner')}" data-view="planner"><span class="ico">⏰</span><span class="label">Day Planner</span></div>
+        <div class="nav-item ${navActive('calendar')}" data-view="calendar"><span class="ico">🗓️</span><span class="label">Calendar</span></div>
+        <div class="nav-item ${navActive('roadmap')}" data-view="roadmap"><span class="ico">🗺️</span><span class="label">Roadmap</span></div>
+        <div class="nav-item ${navActive('timeline')}" data-view="timeline"><span class="ico">📊</span><span class="label">Timeline (Gantt)</span></div>
+        <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
+      </div>
+
+      <div class="sb-section-head"><span class="caret ${secCol('browse')}" data-caret="browse">▾</span><span>Browse tasks</span></div>
+      <div data-group="browse" style="${grpStyle('browse')}">
+        <div class="nav-item ${navActive('all')}" data-view="all"><span class="ico">🗂️</span><span class="label">All tasks</span></div>
+        <div class="nav-item ${navActive('backlog')}" data-view="backlog"><span class="ico">📦</span><span class="label">Backlog (no date)</span></div>
+        <div class="nav-item ${navActive('completed')}" data-view="completed"><span class="ico">✅</span><span class="label">Completed</span></div>
+      </div>
+
+      <div class="sb-section-head"><span class="caret ${secCol('track')}" data-caret="track">▾</span><span>Track &amp; review</span></div>
+      <div data-group="track" style="${grpStyle('track')}">
+        <div class="nav-item ${navActive('stats')}" data-view="stats"><span class="ico">📈</span><span class="label">Stats</span></div>
+        <div class="nav-item ${navActive('reports')}" data-view="reports"><span class="ico">📋</span><span class="label">Reports</span></div>
+        <div class="nav-item ${navActive('goals')}" data-view="goals"><span class="ico">🏁</span><span class="label">Goals</span>${(state.goals||[]).length?`<span class="count">${state.goals.length}</span>`:''}</div>
+        <div class="nav-item ${navActive('achievements')}" data-view="achievements"><span class="ico">🏆</span><span class="label">Achievements</span>${achUnlockedCount()?`<span class="count">${achUnlockedCount()}/${ACHIEVEMENTS.length}</span>`:''}</div>
+        <div class="nav-item ${navActive('activity')}" data-view="activity"><span class="ico">🕒</span><span class="label">Activity log</span></div>
+      </div>
 
       <div class="sb-section-head">
         <span class="caret ${secCol('filters')}" data-caret="filters">▾</span>
         <span>Filters</span><span class="spacer"></span>
         <button class="icon-btn" data-act="add-filter" title="Add filter">+</button>
       </div>
-      <div data-group="filters" style="${ui.collapsedSections.filters?'display:none':''}">${filterItems}</div>
+      <div data-group="filters" style="${grpStyle('filters')}">${filterItems||'<div class="nav-item" style="color:var(--text-faint);font-size:12px">None yet</div>'}</div>
 
       <div class="sb-section-head">
         <span class="caret ${secCol('labels')}" data-caret="labels">▾</span>
         <span>Labels</span><span class="spacer"></span>
         <button class="icon-btn" data-act="add-label" title="Add label">+</button>
       </div>
-      <div data-group="labels" style="${ui.collapsedSections.labels?'display:none':''}">${labelItems}</div>
+      <div data-group="labels" style="${grpStyle('labels')}">${labelItems||'<div class="nav-item" style="color:var(--text-faint);font-size:12px">None yet</div>'}</div>
 
-      <div class="sb-section-head"><span>Data</span></div>
-      <div class="nav-item ${navActive('import')}" data-view="import"><span class="ico">⤓</span><span class="label">Import / Export</span></div>
-      ${location.protocol.startsWith('http')?`<div class="nav-item" data-act="open-pricing"><span class="ico">💎</span><span class="label">Go Pro</span>${SYNC.billing.plan==='pro'?'<span class="count">active</span>':''}</div>`:''}
+      <div class="sb-section-head"><span class="caret ${secCol('actions')}" data-caret="actions">▾</span><span>Quick actions</span></div>
+      <div data-group="actions" style="${grpStyle('actions')}">
+        <div class="nav-item is-action" data-act="weekly-review"><span class="ico">🔁</span><span class="label">Weekly Review…</span></div>
+        <div class="nav-item is-action" data-act="bulk-add"><span class="ico">➕</span><span class="label">Bulk add tasks…</span></div>
+        <div class="nav-item is-action" data-act="open-templates"><span class="ico">📄</span><span class="label">Templates…</span>${(state.templates||[]).length?`<span class="count">${state.templates.length}</span>`:''}</div>
+        ${location.protocol.startsWith('http')?`<div class="nav-item is-action" data-act="open-pricing"><span class="ico">⭐</span><span class="label">Go Pro…</span>${SYNC.billing.plan==='pro'?'<span class="count">active</span>':''}</div>`:''}
+      </div>
+
+      <div class="sb-section-head"><span class="caret ${secCol('account')}" data-caret="account">▾</span><span>Account &amp; data</span></div>
+      <div data-group="account" style="${grpStyle('account')}">
+        <div class="nav-item ${navActive('import')}" data-view="import"><span class="ico">🔄</span><span class="label">Import / Export</span></div>
+      </div>
     </div>
     ${accountBarHtml()}`;
 }
@@ -2281,11 +2309,11 @@ function wireMain() {
     render();
   });
   m.querySelectorAll('[data-rmweeks]').forEach(el=>el.onclick=()=>{ ui.roadmapWeeks=+el.dataset.rmweeks; render(); });
-  m.querySelectorAll('[data-rmadd]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); openQuickAdd(el.dataset.proj, null, el.dataset.week||null); });
+  m.querySelectorAll('[data-rmadd]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); openQuickAdd(el.dataset.proj, el.dataset.section||null, el.dataset.week||null); });
   m.querySelectorAll('[data-rmcell]').forEach(cell=>{
     cell.addEventListener('dragover', e=>{ e.preventDefault(); cell.classList.add('rm-dragover'); });
     cell.addEventListener('dragleave', ()=>cell.classList.remove('rm-dragover'));
-    cell.addEventListener('drop', e=>{ e.preventDefault(); cell.classList.remove('rm-dragover'); if(dragId) roadmapDrop(dragId, cell.dataset.proj, cell.dataset.week||''); });
+    cell.addEventListener('drop', e=>{ e.preventDefault(); cell.classList.remove('rm-dragover'); if(dragId) roadmapDrop(dragId, cell.dataset.proj, cell.dataset.section||'', cell.dataset.week||''); });
   });
 
   // ----- Stats range -----
@@ -3593,24 +3621,34 @@ function roadmapViewHtml(){
   const weeks = ui.roadmapWeeks||6;
   const start = curRoadmapStart();
   const cols=[]; for(let i=0;i<weeks;i++) cols.push(addDays(start,i*7));
+  const now = weekStartStr(todayStr());
   const projects=[getProject('inbox'), ...activeProjects()];
-  const tmpl=`160px 150px repeat(${weeks}, minmax(160px,1fr))`;
-  // header
+  const tmpl=`200px 150px repeat(${weeks}, minmax(160px,1fr))`;
+  // a single cell (sec is '' for the project's no-section row; week '' = No-date backlog column)
+  const cellFor=(pid,sec,c,arr)=>`<div class="rm-cell ${c===''?'rm-backlog':''} ${c===now?'rm-nowcol':''}" data-rmcell data-proj="${pid}" data-section="${sec||''}" data-week="${c}">${arr.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${pid}" data-section="${sec||''}" data-week="${c}">＋</div></div>`;
+  // a full row: rowhead + backlog cell + one cell per week. `pred` selects the tasks,
+  // `dataSec` is the section a drop into this row assigns ('' = no section).
+  const rowFor=(pid, pred, dataSec, labelHtml, cls)=>{
+    const tk = state.tasks.filter(t=>!t.parentId && t.projectId===pid && !t.completed && pred(t));
+    let s = `<div class="rm-rowhead rm-sticky-left ${cls}">${labelHtml}</div>`;
+    s += cellFor(pid, dataSec, '', sortTasks(tk.filter(t=>!t.dueDate)));
+    cols.forEach(c=>{ const end=addDays(c,6); s += cellFor(pid, dataSec, c, sortTasks(tk.filter(t=>t.dueDate && t.dueDate>=c && t.dueDate<=end))); });
+    return s;
+  };
+  // header row
   let cells = `<div class="rm-corner rm-sticky-tl"></div><div class="rm-colhead rm-backlog-head rm-sticky-top">🗂 No date</div>`;
   cols.forEach(c=>{ const end=addDays(c,6); const cs=parseYmd(c), ce=parseYmd(end);
     const label = cs.getMonth()===ce.getMonth() ? `${MONTHS[cs.getMonth()]} ${cs.getDate()}–${ce.getDate()}` : `${MONTHS[cs.getMonth()]} ${cs.getDate()} – ${MONTHS[ce.getMonth()]} ${ce.getDate()}`;
-    cells += `<div class="rm-colhead rm-sticky-top ${c===weekStartStr(todayStr())?'rm-now':''}">${label}</div>`;
+    cells += `<div class="rm-colhead rm-sticky-top ${c===now?'rm-now':''}">${label}</div>`;
   });
-  // rows
+  // rows: each project is a group header (its no-section / stray-section tasks) followed by one row per section
   for(const p of projects){
-    const ptasks = state.tasks.filter(t=>!t.parentId && t.projectId===p.id && !t.completed);
-    cells += `<div class="rm-rowhead rm-sticky-left"><span class="proj-dot" style="background:${p.color}"></span>${esc(p.name)}</div>`;
-    const backlog = sortTasks(ptasks.filter(t=>!t.dueDate));
-    cells += `<div class="rm-cell rm-backlog" data-rmcell data-proj="${p.id}" data-week="">${backlog.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${p.id}" data-week="">＋</div></div>`;
-    cols.forEach(c=>{ const end=addDays(c,6);
-      const inWk = sortTasks(ptasks.filter(t=>t.dueDate && t.dueDate>=c && t.dueDate<=end));
-      cells += `<div class="rm-cell ${c===weekStartStr(todayStr())?'rm-nowcol':''}" data-rmcell data-proj="${p.id}" data-week="${c}">${inWk.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${p.id}" data-week="${c}">＋</div></div>`;
-    });
+    const secs = projectSections(p.id);
+    const secIds = new Set(secs.map(s=>s.id));
+    const projLabel = `<span class="proj-dot" style="background:${p.color}"></span><b>${esc(p.name)}</b>`;
+    // header row = tasks with no section OR a stale section id not present in this project (so nothing is ever hidden)
+    cells += rowFor(p.id, t=>!t.sectionId || !secIds.has(t.sectionId), '', projLabel, 'rm-projhead');
+    for(const s of secs) cells += rowFor(p.id, t=>t.sectionId===s.id, s.id, `<span class="rm-secdot"></span>${esc(s.name)}`, 'rm-sechead');
   }
   return `<div class="view-title-row"><div class="view-title"><span class="emoji">🗺️</span>Roadmap</div>
     <div class="view-actions">
@@ -3619,13 +3657,13 @@ function roadmapViewHtml(){
       <button class="icon-btn" data-rmnav="next" title="Later">›</button>
       <div class="seg" style="margin-left:6px"><button class="${weeks===4?'active':''}" data-rmweeks="4">4w</button><button class="${weeks===6?'active':''}" data-rmweeks="6">6w</button><button class="${weeks===8?'active':''}" data-rmweeks="8">8w</button></div>
     </div></div>
-    <div class="view-sub">Each row is a project, each column a week. Drag a task between weeks to reschedule, between rows to move project, or out of “No date” to plan it. Click ＋ to add.</div>
+    <div class="view-sub">Rows are grouped by <b>project</b> then its <b>sections</b>; columns are weeks. Drag a task between weeks to reschedule, between rows to move it to another project/section, or out of “No date” to plan it. Click ＋ to add.</div>
     <div class="rm-grid" style="grid-template-columns:${tmpl}">${cells}</div>`;
 }
-// Move a task into a project/week cell, preserving weekday where possible.
-function roadmapDrop(taskId, projId, weekStart){
+// Move a task into a project/section/week cell, preserving weekday where possible.
+function roadmapDrop(taskId, projId, sectionId, weekStart){
   const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
-  t.projectId=projId; t.sectionId=null;
+  t.projectId=projId; t.sectionId=sectionId||null;
   if(!weekStart){ t.dueDate=null; }
   else { const offset = t.dueDate ? parseYmd(t.dueDate).getDay() : 1; t.dueDate = addDays(weekStart, offset); }
   logActivity('moved', t.id, t.title); persist(); render();
