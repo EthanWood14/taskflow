@@ -610,6 +610,34 @@
   .status-chip { font-size:11px; padding:1px 8px; border:1px solid; border-radius:10px; display:inline-flex; align-items:center; gap:3px; }
   .mention { color:var(--accent); background:var(--accent-soft); padding:0 4px; border-radius:5px; font-weight:600; }
 
+  /* ===== Roadmap (weekly planning grid) ===== */
+  .rm-grid { display:grid; gap:1px; background:var(--border); border:1px solid var(--border); border-radius:14px; overflow:auto; max-height:calc(100vh - 200px); }
+  .rm-corner { background:var(--bg-alt); position:sticky; left:0; top:0; z-index:4; }
+  .rm-colhead { background:var(--bg-alt); padding:10px 12px; font-weight:700; font-size:12.5px; text-align:center; }
+  .rm-colhead.rm-now { color:var(--accent); }
+  .rm-colhead.rm-now::after { content:' • now'; font-size:10px; color:var(--accent); }
+  .rm-backlog-head { color:var(--text-dim); }
+  .rm-sticky-top { position:sticky; top:0; z-index:2; }
+  .rm-sticky-left { position:sticky; left:0; z-index:3; }
+  .rm-sticky-tl { position:sticky; left:0; top:0; z-index:5; }
+  .rm-rowhead { background:var(--bg-alt); padding:12px; font-weight:700; font-size:13px; display:flex; align-items:center; gap:7px; min-width:0; }
+  .rm-rowhead .proj-dot { flex-shrink:0; }
+  .rm-cell { background:var(--bg); padding:7px; min-height:62px; display:flex; flex-direction:column; gap:5px; transition:background .12s; }
+  .rm-cell.rm-backlog { background:var(--bg-alt); }
+  .rm-cell.rm-nowcol { background:linear-gradient(var(--accent-soft),var(--accent-soft)) padding-box; }
+  .rm-cell.rm-dragover { background:var(--accent-soft); box-shadow:inset 0 0 0 2px var(--accent); }
+  .rm-chip { display:flex; align-items:center; gap:6px; background:var(--bg-alt); border:1px solid var(--border); border-left:3px solid var(--p4); border-radius:8px; padding:5px 8px; font-size:12px; cursor:grab; box-shadow:var(--shadow-sm); }
+  .rm-cell:not(.rm-backlog) .rm-chip { background:var(--bg); }
+  .rm-chip.p1 { border-left-color:var(--p1); } .rm-chip.p2 { border-left-color:var(--p2); } .rm-chip.p3 { border-left-color:var(--p3); }
+  .rm-chip.dragging { opacity:.4; }
+  .rm-chip.done .rm-title { text-decoration:line-through; color:var(--text-faint); }
+  .rm-check { width:16px !important; height:16px !important; min-width:16px; font-size:10px; }
+  .rm-title { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rm-lock { font-size:10px; }
+  .rm-add { color:var(--text-faint); font-size:13px; text-align:center; cursor:pointer; padding:2px; border-radius:6px; opacity:0; transition:opacity .1s; }
+  .rm-cell:hover .rm-add { opacity:1; }
+  .rm-add:hover { background:var(--hover); color:var(--accent); }
+
   /* ===== Timeline / Gantt ===== */
   .tl-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
   .tl-head { display:flex; position:sticky; top:0; background:var(--bg-alt); border-bottom:1px solid var(--border); }
@@ -1056,6 +1084,7 @@ function renderSidebar() {
       <div class="nav-item ${navActive('completed')}" data-view="completed"><span class="ico">✅</span><span class="label">Completed</span></div>
 
       <div class="sb-section-head"><span>Views</span></div>
+      <div class="nav-item ${navActive('roadmap')}" data-view="roadmap"><span class="ico">🗺️</span><span class="label">Roadmap</span></div>
       <div class="nav-item ${navActive('calendar')}" data-view="calendar"><span class="ico">📆</span><span class="label">Calendar</span></div>
       <div class="nav-item ${navActive('planner')}" data-view="planner"><span class="ico">⏰</span><span class="label">Day Planner</span></div>
       <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
@@ -1335,6 +1364,7 @@ function renderMain() {
   else if (v==='planner')  { body = `<div class="view-inner" style="max-width:760px">${plannerViewHtml()}</div>`; }
   else if (v==='stats')    { body = `<div class="view-inner" style="max-width:900px">${statsViewHtml()}</div>`; }
   else if (v==='achievements') { body = `<div class="view-inner">${achievementsViewHtml()}</div>`; }
+  else if (v==='roadmap')   { body = `<div class="board-inner">${roadmapViewHtml()}</div>`; }
   else if (v==='timeline')  { body = `<div class="view-inner" style="max-width:1100px">${timelineViewHtml()}</div>`; }
   else if (v==='reports')   { body = `<div class="view-inner" style="max-width:900px">${reportsViewHtml()}</div>`; }
   else if (v==='goals')     { body = `<div class="view-inner">${goalsViewHtml()}</div>`; }
@@ -2242,6 +2272,22 @@ function wireMain() {
     row.querySelector('.pl-slot').addEventListener('dblclick', ()=>{ const qa=openQuickAdd('inbox',null,todayStr()); });
   });
 
+  // ----- Roadmap -----
+  m.querySelectorAll('[data-rmnav]').forEach(el=>el.onclick=()=>{
+    const w=ui.roadmapWeeks||6;
+    if(el.dataset.rmnav==='prev') ui.roadmapStart=addDays(curRoadmapStart(),-7);
+    else if(el.dataset.rmnav==='next') ui.roadmapStart=addDays(curRoadmapStart(),7);
+    else ui.roadmapStart=weekStartStr(todayStr());
+    render();
+  });
+  m.querySelectorAll('[data-rmweeks]').forEach(el=>el.onclick=()=>{ ui.roadmapWeeks=+el.dataset.rmweeks; render(); });
+  m.querySelectorAll('[data-rmadd]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); openQuickAdd(el.dataset.proj, null, el.dataset.week||null); });
+  m.querySelectorAll('[data-rmcell]').forEach(cell=>{
+    cell.addEventListener('dragover', e=>{ e.preventDefault(); cell.classList.add('rm-dragover'); });
+    cell.addEventListener('dragleave', ()=>cell.classList.remove('rm-dragover'));
+    cell.addEventListener('drop', e=>{ e.preventDefault(); cell.classList.remove('rm-dragover'); if(dragId) roadmapDrop(dragId, cell.dataset.proj, cell.dataset.week||''); });
+  });
+
   // ----- Stats range -----
   m.querySelectorAll('[data-statrange]').forEach(el=>el.onclick=()=>{ ui.statRange=+el.dataset.statrange; render(); });
 
@@ -2647,6 +2693,7 @@ function openCommandPalette() {
     {icon:'🍅', label:'Start Focus / Pomodoro', run:()=>openFocusPicker()},
     {icon:'✨', label:'Plan My Day (auto-schedule)', run:()=>planMyDay()},
     {icon:'➕', label:'Bulk add tasks', run:()=>openBulkAdd()},
+    {icon:'🗺️', label:'Open Roadmap (weekly grid)', run:()=>goView('roadmap')},
     {icon:'📐', label:'Open Timeline (Gantt)', run:()=>goView('timeline')},
     {icon:'📈', label:'Open Reports', run:()=>goView('reports')},
     {icon:'🎯', label:'Open Goals', run:()=>goView('goals')},
@@ -3529,6 +3576,59 @@ function customFieldsHtml(t) {
     return `<div class="field"><label>${esc(f.name)}</label><input type="${f.type==='number'?'number':'text'}" data-cf="${f.id}" value="${esc(v)}"></div>`;
   }).join('');
   return `<div class="detail-section-title">Custom fields</div><div class="row2" style="flex-wrap:wrap">${rows}</div>`;
+}
+
+// ============================================================
+//  FEATURE: Roadmap — weekly planning grid (rows = projects, cols = weeks)
+// ============================================================
+function weekStartStr(s){ const d=parseYmd(s); d.setDate(d.getDate()-d.getDay()); return ymd(d); } // Sunday
+function curRoadmapStart(){ if(!ui.roadmapStart) ui.roadmapStart=weekStartStr(todayStr()); return ui.roadmapStart; }
+function rmChip(t){
+  const p=t.priority||4; const blocked=!t.completed&&isBlocked(t);
+  return `<div class="rm-chip p${p} ${t.completed?'done':''}" data-task="${t.id}" draggable="true" title="${esc(t.title)}">
+    <span class="rm-check checkbox ${p<4?'p'+p:''} ${t.completed?'done':''}" data-check="${t.id}">✓</span>
+    <span class="rm-title">${t.milestone?'★ ':''}${esc(t.title)}</span>${blocked?'<span class="rm-lock">🔒</span>':''}</div>`;
+}
+function roadmapViewHtml(){
+  const weeks = ui.roadmapWeeks||6;
+  const start = curRoadmapStart();
+  const cols=[]; for(let i=0;i<weeks;i++) cols.push(addDays(start,i*7));
+  const projects=[getProject('inbox'), ...activeProjects()];
+  const tmpl=`160px 150px repeat(${weeks}, minmax(160px,1fr))`;
+  // header
+  let cells = `<div class="rm-corner rm-sticky-tl"></div><div class="rm-colhead rm-backlog-head rm-sticky-top">🗂 No date</div>`;
+  cols.forEach(c=>{ const end=addDays(c,6); const cs=parseYmd(c), ce=parseYmd(end);
+    const label = cs.getMonth()===ce.getMonth() ? `${MONTHS[cs.getMonth()]} ${cs.getDate()}–${ce.getDate()}` : `${MONTHS[cs.getMonth()]} ${cs.getDate()} – ${MONTHS[ce.getMonth()]} ${ce.getDate()}`;
+    cells += `<div class="rm-colhead rm-sticky-top ${c===weekStartStr(todayStr())?'rm-now':''}">${label}</div>`;
+  });
+  // rows
+  for(const p of projects){
+    const ptasks = state.tasks.filter(t=>!t.parentId && t.projectId===p.id && !t.completed);
+    cells += `<div class="rm-rowhead rm-sticky-left"><span class="proj-dot" style="background:${p.color}"></span>${esc(p.name)}</div>`;
+    const backlog = sortTasks(ptasks.filter(t=>!t.dueDate));
+    cells += `<div class="rm-cell rm-backlog" data-rmcell data-proj="${p.id}" data-week="">${backlog.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${p.id}" data-week="">＋</div></div>`;
+    cols.forEach(c=>{ const end=addDays(c,6);
+      const inWk = sortTasks(ptasks.filter(t=>t.dueDate && t.dueDate>=c && t.dueDate<=end));
+      cells += `<div class="rm-cell ${c===weekStartStr(todayStr())?'rm-nowcol':''}" data-rmcell data-proj="${p.id}" data-week="${c}">${inWk.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${p.id}" data-week="${c}">＋</div></div>`;
+    });
+  }
+  return `<div class="view-title-row"><div class="view-title"><span class="emoji">🗺️</span>Roadmap</div>
+    <div class="view-actions">
+      <button class="icon-btn" data-rmnav="prev" title="Earlier">‹</button>
+      <button class="btn ghost" data-rmnav="today" style="padding:6px 12px">This week</button>
+      <button class="icon-btn" data-rmnav="next" title="Later">›</button>
+      <div class="seg" style="margin-left:6px"><button class="${weeks===4?'active':''}" data-rmweeks="4">4w</button><button class="${weeks===6?'active':''}" data-rmweeks="6">6w</button><button class="${weeks===8?'active':''}" data-rmweeks="8">8w</button></div>
+    </div></div>
+    <div class="view-sub">Each row is a project, each column a week. Drag a task between weeks to reschedule, between rows to move project, or out of “No date” to plan it. Click ＋ to add.</div>
+    <div class="rm-grid" style="grid-template-columns:${tmpl}">${cells}</div>`;
+}
+// Move a task into a project/week cell, preserving weekday where possible.
+function roadmapDrop(taskId, projId, weekStart){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  t.projectId=projId; t.sectionId=null;
+  if(!weekStart){ t.dueDate=null; }
+  else { const offset = t.dueDate ? parseYmd(t.dueDate).getDay() : 1; t.dueDate = addDays(weekStart, offset); }
+  logActivity('moved', t.id, t.title); persist(); render();
 }
 
 // ============================================================
