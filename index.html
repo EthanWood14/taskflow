@@ -4,58 +4,67 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>TaskFlow</title>
-<meta name="theme-color" content="#6d5dfc" />
+<meta name="theme-color" content="#0a0a0b" />
 <meta name="description" content="TaskFlow — a fast, private task manager you can run locally or on the web." />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='112'%20fill='%236d5dfc'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='112'%20fill='%236d5dfc'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='64'%20fill='%23ff6a00'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='64'%20fill='%23ff6a00'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E" />
 <link rel="manifest" href="manifest.webmanifest" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="TaskFlow" />
 <style>
-  :root {
-    --bg: #ffffff;
-    --bg-alt: #f6f7fb;
-    --sidebar: #f4f3ff;
-    --sidebar-grad: linear-gradient(180deg, #f3f1ff 0%, #eef4ff 100%);
-    --border: #e8e8f2;
-    --text: #1b1b2b;
-    --text-dim: #6b6b80;
-    --text-faint: #a6a6ba;
-    --accent: #6d5dfc;
-    --accent-2: #9b8cff;
-    --brand-grad: linear-gradient(135deg, #6d5dfc 0%, #9163ff 100%);
-    --accent-soft: #ece9ff;
-    --hover: #eeedf7;
-    --selected: #e7e3ff;
-    --p1: #ef4444;
-    --p2: #f59e0b;
-    --p3: #3b82f6;
-    --p4: #b3b3c4;
-    --green: #10b981;
-    --shadow: 0 8px 30px rgba(60,50,120,.14);
-    --shadow-sm: 0 2px 8px rgba(60,50,120,.08);
-    --radius: 12px;
+  /* === Default look: sharp, black & orange (dark is the home aesthetic) === */
+  :root, [data-theme="dark"] {
+    --bg: #0a0a0b;
+    --bg-alt: #131316;
+    --sidebar: #0c0c0e;
+    --sidebar-grad: linear-gradient(180deg, #111012 0%, #08080a 100%);
+    --border: #29251f;
+    --text: #f4efe7;
+    --text-dim: #968f84;
+    --text-faint: #5d574e;
+    --accent: #ff6a00;
+    --accent-2: #ff9b3d;
+    --brand-grad: linear-gradient(100deg, #ff6a00 0%, #ff9b3d 100%);
+    --accent-soft: #221305;
+    --hover: #17161a;
+    --selected: #1f1408;
+    --p1: #ff4d4d;
+    --p2: #ffae00;
+    --p3: #3b9eff;
+    --p4: #6a655d;
+    --green: #2fe08a;
+    --shadow: 0 14px 44px rgba(0,0,0,.66);
+    --shadow-sm: 0 2px 10px rgba(0,0,0,.55);
+    --glow: 0 0 0 1px rgba(255,106,0,.0), 0 6px 22px rgba(255,106,0,.28);
+    --radius: 4px;
   }
-  [data-theme="dark"] {
-    --bg: #15151f;
-    --bg-alt: #1d1d2b;
-    --sidebar: #171722;
-    --sidebar-grad: linear-gradient(180deg, #1a1726 0%, #14141f 100%);
-    --border: #2c2c3d;
-    --text: #ececf5;
-    --text-dim: #9a9ab0;
-    --text-faint: #62627a;
-    --accent: #8b7bff;
-    --accent-2: #a99bff;
-    --brand-grad: linear-gradient(135deg, #7c6bff 0%, #9d6dff 100%);
-    --accent-soft: #2a2540;
-    --hover: #242434;
-    --selected: #2e294a;
-    --green: #34d399;
-    --shadow: 0 10px 36px rgba(0,0,0,.5);
-    --shadow-sm: 0 2px 10px rgba(0,0,0,.4);
+  /* Light mode: still sharp & orange, for those who toggle it */
+  [data-theme="light"] {
+    --bg: #ffffff;
+    --bg-alt: #faf6f1;
+    --sidebar: #fbf6f0;
+    --sidebar-grad: linear-gradient(180deg, #fcf7f1 0%, #fbf3ea 100%);
+    --border: #ece1d4;
+    --text: #14110d;
+    --text-dim: #6b6258;
+    --text-faint: #a89d90;
+    --accent: #ef5f00;
+    --accent-2: #ff8a33;
+    --brand-grad: linear-gradient(100deg, #ef5f00 0%, #ff8a33 100%);
+    --accent-soft: #fff0e1;
+    --hover: #f6ede2;
+    --selected: #ffe7d2;
+    --p1: #e23b3b;
+    --p2: #e08a00;
+    --p3: #2f7fe0;
+    --p4: #b3a895;
+    --green: #109b5e;
+    --shadow: 0 14px 40px rgba(120,70,20,.16);
+    --shadow-sm: 0 2px 10px rgba(120,70,20,.1);
+    --glow: 0 6px 22px rgba(239,95,0,.22);
+    --radius: 4px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -645,6 +654,28 @@
   .rm-cell:hover .rm-add { opacity:1; }
   .rm-add:hover { background:var(--hover); color:var(--accent); }
 
+  /* ===== Roadmap · Gantt mode (shares the project › section rows) ===== */
+  .rmg-wrap { overflow:auto; border:1px solid var(--border); max-height:calc(100vh - 200px); }
+  .rmg-headrow, .rmg-row { display:flex; }
+  .rmg-corner, .rmg-label { width:200px; min-width:200px; padding:10px 12px; background:var(--bg-alt); border-right:1px solid var(--border);
+    position:sticky; left:0; z-index:3; display:flex; align-items:center; gap:7px; font-size:13px; }
+  .rmg-corner { top:0; left:0; z-index:6; font-size:10.5px; letter-spacing:1.4px; text-transform:uppercase; color:var(--text-faint); }
+  .rmg-label.rm-projhead { background:var(--hover); font-weight:700; }
+  .rmg-label.rm-sechead { padding-left:24px; color:var(--text-dim); font-weight:600; font-size:12.5px; }
+  .rmg-headrow { position:sticky; top:0; z-index:4; }
+  .rmg-ruler { display:flex; background:var(--bg-alt); }
+  .rmg-wk { border-right:1px solid var(--border); padding:10px 6px; font-size:11.5px; font-weight:700; text-align:center; color:var(--text-dim);
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .rmg-wk.rmg-now { color:var(--accent); }
+  .rmg-row { border-top:1px solid var(--border); min-height:40px; }
+  .rmg-track { position:relative; min-height:40px;
+    background-image: repeating-linear-gradient(90deg, transparent 0 calc(var(--dayw) - 1px), var(--border) calc(var(--dayw) - 1px) var(--dayw)); }
+  .rmg-bar { position:absolute; top:8px; height:24px; border-radius:3px; color:#0a0a0b; font-size:11px; font-weight:700; line-height:24px;
+    padding:0 7px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; cursor:pointer; box-shadow:var(--shadow-sm); z-index:1; }
+  .rmg-bar:hover { filter:brightness(1.12); outline:1px solid var(--accent); }
+  .rmg-undated { margin-left:auto; color:var(--text-faint); font-size:11px; }
+  .rmg-todayline { position:absolute; top:0; bottom:0; width:2px; background:var(--accent); box-shadow:0 0 8px var(--accent); z-index:2; pointer-events:none; }
+
   /* ===== Timeline / Gantt ===== */
   .tl-wrap { overflow-x:auto; border:1px solid var(--border); border-radius:12px; }
   .tl-head { display:flex; position:sticky; top:0; background:var(--bg-alt); border-bottom:1px solid var(--border); }
@@ -778,6 +809,57 @@
     .wr-row { flex-direction:column; align-items:flex-start; gap:6px; }
     .tl-label { width:120px; min-width:120px; }
   }
+
+  /* ====================================================================
+     SHARP — black & orange. Flatten the soft radii, tighten everything,
+     add the sleek orange treatments. (Most radii are hardcoded, so we
+     override the major surfaces here.)
+     ==================================================================== */
+  .task-row, .board-card, .board-col, .modal, .cmd, .karma, .nav-item, .btn, .seg,
+  .seg button, .label-chip, .rm-chip, .rm-cell, .rm-grid, .stat-card, .stat-panel,
+  .goal-card, .ach-card, .mx-quad, .mx-card, .cal-cell, .cal-chip, .pl-task, .pl-chip,
+  .pl-grid, .pl-tray-wrap, .bulk-bar, #focus-bar, .toast, .field input, .field textarea,
+  .field select, .sb-account, .tb-signin, .pres-pill, .cmd-input, .import-area,
+  .schema-box, .search-box, .icon-btn, .add-task-btn, .menu, .menu button, .qa-mic,
+  .qa-chip, .dep-opt, .label-opt, .pri-opt, .budget, .tl-wrap, .tl-bar, .lock-box,
+  .lock-pin, .rk-code, .pw-eye, .hm-cell, .mem-av, .acct-av, .tb-acct, .pres-av,
+  .sba-av, .sba-signin-ico, .preset-sw, .pr-card, .wr-prog, .wr-acts button,
+  .karma-bar, .karma-fill, .budget-bar, .budget-fill, .goal-bar, .goal-fill,
+  .stat-pbar, .pill, .meta-chip.blocked, .welcome-bar .wb-cta {
+    border-radius: var(--radius) !important;
+  }
+  .checkbox, .logo .dot, .brand-mini .dot { border-radius: 3px !important; }
+  .seg, .seg button, .cmd-overlay .cmd { border-radius: var(--radius) !important; }
+
+  /* Sleek typography + sharp dividers */
+  body { letter-spacing: .1px; }
+  .sb-section-head { letter-spacing: 1.4px; font-size: 10.5px; color: var(--text-faint); }
+  .sb-section-head > span:nth-child(2), .sb-section-head > span:first-child + span { position: relative; }
+  .view-title { letter-spacing: -.6px; }
+  .karma-lvl, .stat-val, .rk-code, .lock-pin, .pres-av, .acct-av, .mem-av, .sba-av,
+  .tb-acct, .karma-xp { font-feature-settings: "tnum"; }
+
+  /* Orange glow on the things that act */
+  .btn.primary, .add-task-btn, .tb-signin { box-shadow: var(--glow) !important; }
+  .btn.primary:hover, .add-task-btn:hover, .tb-signin:hover { box-shadow: 0 8px 28px rgba(255,106,0,.42) !important; }
+  .nav-item.active { background: var(--selected); box-shadow: none; }
+  .nav-item.active::before { width: 3px; border-radius: 0; box-shadow: 0 0 10px var(--accent); }
+  .checkbox.done { box-shadow: 0 0 10px rgba(255,106,0,.5); }
+
+  /* Sharp brand mark + topbar hairline */
+  .logo .dot, .brand-mini .dot { box-shadow: 0 0 16px rgba(255,106,0,.45); }
+  .topbar { border-bottom: 1px solid var(--border); }
+  #sidebar { border-right: 1px solid var(--border); }
+
+  /* Crisp orange scrollbar + selection */
+  ::-webkit-scrollbar-thumb { background: #2a2520; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+  ::selection { background: rgba(255,106,0,.32); color: #fff; }
+
+  /* Cards read as cut planes, not pills */
+  .task-row:hover { box-shadow: inset 0 0 0 1px var(--border); }
+  .board-card, .stat-card, .stat-panel, .goal-card, .ach-card, .karma { border: 1px solid var(--border); }
+  .modal, .cmd, .menu { border: 1px solid var(--border); }
 </style>
 </head>
 <body>
@@ -939,7 +1021,10 @@ function load() { try { const r = localStorage.getItem(STORE_KEY); return r? JSO
 // Backfill fields added in later versions so old saves keep working.
 function migrate(s) {
   if (!s) return null;
-  s.settings = Object.assign({ theme:'light', userName:'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null }, s.settings||{});
+  s.settings = Object.assign({ theme:'dark', userName:'Me', accent:'#ff6a00', themePreset:'ember', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null }, s.settings||{});
+  // Adopt the new sharp black & orange identity for anyone still on the old violet default.
+  if (s.settings.accent === '#6d5dfc') s.settings.accent = '#ff6a00';
+  if (s.settings.themePreset === 'aurora') { s.settings.themePreset = 'ember'; s.settings.theme = 'dark'; }   // rebrand → dark is home
   s.stats = Object.assign({ xp:0, level:1, streak:0, longestStreak:0, lastActiveDate:null, totalCompleted:0 }, s.stats||{});
   s.activity = s.activity || {};          // { 'YYYY-MM-DD': count }
   s.achievements = s.achievements || {};  // { achId: timestamp }
@@ -995,7 +1080,7 @@ function seed() {
     tasks,
     comments: [],
     filters: [ { id: uid('flt'), name:'Priority 1', color:'#dc4c3e', query:'p1' }, { id: uid('flt'), name:'No date', color:'#808080', query:'no date' } ],
-    settings: { theme: 'light', userName: 'Me', accent:'#6d5dfc', themePreset:'aurora', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null },
+    settings: { theme: 'dark', userName: 'Me', accent:'#ff6a00', themePreset:'ember', sound:true, notifications:false, autoCarry:false, dayStart:9, dayEnd:18, lastCarry:null },
     stats: { xp:0, level:1, streak:0, longestStreak:0, lastActiveDate:null, totalCompleted:0 },
     activity: {},
     achievements: {},
@@ -1072,7 +1157,7 @@ function renderSidebar() {
     </div>`).join('');
 
   // Auto-expand the group that owns the current view so the active item is never hidden.
-  const VIEW_GROUP = { all:'browse', backlog:'browse', completed:'browse', stats:'track', reports:'track', goals:'track', achievements:'track', activity:'track', import:'account', project:'projects', label:'labels', filter:'filters' };
+  const VIEW_GROUP = { all:'browse', backlog:'browse', completed:'browse', stats:'track', reports:'track', goals:'track', achievements:'track', activity:'track', import:'account', project:'projects', label:'labels', filter:'filters', roadmap:'plan', calendar:'plan', planner:'plan', matrix:'plan', timeline:'plan' };
   const activeGrp = VIEW_GROUP[ui.view];
   const grpOpen = (key) => activeGrp===key || !ui.collapsedSections[key];   // true => visible
   const secCol = (key) => grpOpen(key) ? '' : 'collapsed';
@@ -1105,8 +1190,8 @@ function renderSidebar() {
       <div data-group="plan" style="${grpStyle('plan')}">
         <div class="nav-item ${navActive('planner')}" data-view="planner"><span class="ico">⏰</span><span class="label">Day Planner</span></div>
         <div class="nav-item ${navActive('calendar')}" data-view="calendar"><span class="ico">🗓️</span><span class="label">Calendar</span></div>
-        <div class="nav-item ${navActive('roadmap')}" data-view="roadmap"><span class="ico">🗺️</span><span class="label">Roadmap</span></div>
-        <div class="nav-item ${navActive('timeline')}" data-view="timeline"><span class="ico">📊</span><span class="label">Timeline (Gantt)</span></div>
+        <div class="nav-item ${ui.view==='roadmap'&&(ui.roadmapMode||'grid')==='grid'?'active':''}" data-act="open-roadmap"><span class="ico">🗺️</span><span class="label">Roadmap</span></div>
+        <div class="nav-item ${ui.view==='roadmap'&&ui.roadmapMode==='gantt'?'active':''}" data-act="open-gantt"><span class="ico">📊</span><span class="label">Timeline · Gantt</span></div>
         <div class="nav-item ${navActive('matrix')}" data-view="matrix"><span class="ico">🎯</span><span class="label">Priority Matrix</span></div>
       </div>
 
@@ -1393,7 +1478,7 @@ function renderMain() {
   else if (v==='stats')    { body = `<div class="view-inner" style="max-width:900px">${statsViewHtml()}</div>`; }
   else if (v==='achievements') { body = `<div class="view-inner">${achievementsViewHtml()}</div>`; }
   else if (v==='roadmap')   { body = `<div class="board-inner">${roadmapViewHtml()}</div>`; }
-  else if (v==='timeline')  { body = `<div class="view-inner" style="max-width:1100px">${timelineViewHtml()}</div>`; }
+  else if (v==='timeline')  { ui.view='roadmap'; ui.roadmapMode='gantt'; return renderMain(); }   /* Gantt now lives inside Roadmap */
   else if (v==='reports')   { body = `<div class="view-inner" style="max-width:900px">${reportsViewHtml()}</div>`; }
   else if (v==='goals')     { body = `<div class="view-inner">${goalsViewHtml()}</div>`; }
   else if (v==='activity')  { body = `<div class="view-inner">${activityViewHtml()}</div>`; }
@@ -1763,6 +1848,7 @@ function playSound(kind) {
 
 // ---------- Accent / theme presets ----------
 const THEME_PRESETS = {
+  ember:   { accent:'#ff6a00', accent2:'#ff9b3d' },
   aurora:  { accent:'#6d5dfc', accent2:'#9163ff' },
   ocean:   { accent:'#0ea5b7', accent2:'#22c1c3' },
   sunset:  { accent:'#f0653e', accent2:'#ff9472' },
@@ -2208,6 +2294,8 @@ function wireSidebar() {
     else if(a==='open-templates'){ ui.drawerOpen=false; openTemplatePicker(); }
     else if(a==='bulk-add'){ ui.drawerOpen=false; openBulkAdd(); }
     else if(a==='open-pricing'){ ui.drawerOpen=false; openPricing(); }
+    else if(a==='open-roadmap') goRoadmap('grid');
+    else if(a==='open-gantt') goRoadmap('gantt');
     else if(a==='open-auth'){ ui.drawerOpen=false; openAuthModal('login'); }
     else if(a==='account-menu'){ accountMenu(e.clientX, e.clientY); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
@@ -2309,6 +2397,8 @@ function wireMain() {
     render();
   });
   m.querySelectorAll('[data-rmweeks]').forEach(el=>el.onclick=()=>{ ui.roadmapWeeks=+el.dataset.rmweeks; render(); });
+  m.querySelectorAll('[data-rmmode]').forEach(el=>el.onclick=()=>{ ui.roadmapMode=el.dataset.rmmode; render(); });
+  m.querySelectorAll('.rmg-bar[data-task]').forEach(el=>el.onclick=()=>openTaskDetail(el.dataset.task));
   m.querySelectorAll('[data-rmadd]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); openQuickAdd(el.dataset.proj, el.dataset.section||null, el.dataset.week||null); });
   m.querySelectorAll('[data-rmcell]').forEach(cell=>{
     cell.addEventListener('dragover', e=>{ e.preventDefault(); cell.classList.add('rm-dragover'); });
@@ -2721,8 +2811,8 @@ function openCommandPalette() {
     {icon:'🍅', label:'Start Focus / Pomodoro', run:()=>openFocusPicker()},
     {icon:'✨', label:'Plan My Day (auto-schedule)', run:()=>planMyDay()},
     {icon:'➕', label:'Bulk add tasks', run:()=>openBulkAdd()},
-    {icon:'🗺️', label:'Open Roadmap (weekly grid)', run:()=>goView('roadmap')},
-    {icon:'📐', label:'Open Timeline (Gantt)', run:()=>goView('timeline')},
+    {icon:'🗺️', label:'Open Roadmap (weekly grid)', run:()=>goRoadmap('grid')},
+    {icon:'📊', label:'Open Timeline / Gantt', run:()=>goRoadmap('gantt')},
     {icon:'📈', label:'Open Reports', run:()=>goView('reports')},
     {icon:'🎯', label:'Open Goals', run:()=>goView('goals')},
     {icon:'📜', label:'Open Activity log', run:()=>goView('activity')},
@@ -2770,6 +2860,7 @@ function openCommandPalette() {
   draw(); setTimeout(()=>input.focus(),30);
 }
 function goView(v){ ui.view=v; ui.projectId=null; ui.labelName=null; ui.filterId=null; ui.search=''; ui.drawerOpen=false; render(); }
+function goRoadmap(mode){ ui.view='roadmap'; ui.roadmapMode=(mode==='gantt'?'gantt':'grid'); ui.projectId=null; ui.labelName=null; ui.filterId=null; ui.search=''; ui.drawerOpen=false; render(); }
 
 // ============================================================
 //  FEATURE: Pomodoro / Focus timer + time tracking
@@ -2826,7 +2917,7 @@ function fmtDuration(sec){ sec=Math.round(sec||0); if(sec<60) return sec+'s'; co
 function openSettings() {
   const s = state.settings;
   const presetSw = Object.entries(THEME_PRESETS).map(([k,v])=>`<span class="preset-sw ${s.themePreset===k?'sel':''}" data-preset="${k}" style="background:linear-gradient(135deg,${v.accent},${v.accent2})" title="${k}"></span>`).join('');
-  const accentSw = ['#6d5dfc','#0ea5b7','#f0653e','#2f9e44','#e64980','#475569','#e11d48','#0891b2','#7c3aed','#16a34a'].map(c=>`<span class="color-swatch" data-accent="${c}" style="background:${c};width:26px;height:26px;cursor:pointer;outline:${c===s.accent?'2px solid var(--text)':'none'};outline-offset:2px"></span>`).join('');
+  const accentSw = ['#ff6a00','#ff3d00','#6d5dfc','#0ea5b7','#f0653e','#2f9e44','#e64980','#475569','#0891b2','#16a34a'].map(c=>`<span class="color-swatch" data-accent="${c}" style="background:${c};width:26px;height:26px;cursor:pointer;outline:${c===s.accent?'2px solid var(--text)':'none'};outline-offset:2px"></span>`).join('');
   modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">⚙ Settings</div><button class="icon-btn" data-act="close-modal">✕</button></div>
     <div class="modal-body">
       <div class="field"><label>☁ Cloud sync &amp; account</label><div id="sync-box">${syncBoxHtml()}</div></div>
@@ -3617,48 +3708,84 @@ function rmChip(t){
     <span class="rm-check checkbox ${p<4?'p'+p:''} ${t.completed?'done':''}" data-check="${t.id}">✓</span>
     <span class="rm-title">${t.milestone?'★ ':''}${esc(t.title)}</span>${blocked?'<span class="rm-lock">🔒</span>':''}</div>`;
 }
+// Shared row model for both Roadmap modes: project header row + one row per section.
+function roadmapRows(projects){
+  const rows=[];
+  for(const p of projects){
+    const secs = projectSections(p.id); const secIds = new Set(secs.map(s=>s.id));
+    rows.push({ pid:p.id, sec:'', cls:'rm-projhead', label:`<span class="proj-dot" style="background:${p.color}"></span><b>${esc(p.name)}</b>`,
+      tasks: state.tasks.filter(t=>!t.parentId && t.projectId===p.id && !t.completed && (!t.sectionId || !secIds.has(t.sectionId))) });
+    for(const s of secs) rows.push({ pid:p.id, sec:s.id, cls:'rm-sechead', label:`<span class="rm-secdot"></span>${esc(s.name)}`,
+      tasks: state.tasks.filter(t=>!t.parentId && t.projectId===p.id && !t.completed && t.sectionId===s.id) });
+  }
+  return rows;
+}
 function roadmapViewHtml(){
   const weeks = ui.roadmapWeeks||6;
+  const mode = ui.roadmapMode||'grid';
   const start = curRoadmapStart();
-  const cols=[]; for(let i=0;i<weeks;i++) cols.push(addDays(start,i*7));
   const now = weekStartStr(todayStr());
   const projects=[getProject('inbox'), ...activeProjects()];
+  const rows = roadmapRows(projects);
+  const header = `<div class="view-title-row"><div class="view-title"><span class="emoji">🗺️</span>Roadmap</div>
+    <div class="view-actions">
+      <div class="seg"><button class="${mode==='grid'?'active':''}" data-rmmode="grid">▦ Grid</button><button class="${mode==='gantt'?'active':''}" data-rmmode="gantt">▤ Gantt</button></div>
+      <button class="icon-btn" data-rmnav="prev" title="Earlier" style="margin-left:6px">‹</button>
+      <button class="btn ghost" data-rmnav="today" style="padding:6px 12px">This week</button>
+      <button class="icon-btn" data-rmnav="next" title="Later">›</button>
+      <div class="seg" style="margin-left:6px"><button class="${weeks===4?'active':''}" data-rmweeks="4">4w</button><button class="${weeks===6?'active':''}" data-rmweeks="6">6w</button><button class="${weeks===8?'active':''}" data-rmweeks="8">8w</button></div>
+    </div></div>`;
+
+  if (mode==='gantt') {
+    return header + `<div class="view-sub">Same <b>project › section</b> rows as Grid, drawn as a <b>Gantt</b>: each bar runs by estimate up to its due/deadline. ⚑ = hard deadline · ◆ = milestone. Click a bar to open. Switch to <b>Grid</b> to drag-schedule.</div>${roadmapGanttHtml(rows, start, weeks)}`;
+  }
+
+  const cols=[]; for(let i=0;i<weeks;i++) cols.push(addDays(start,i*7));
   const tmpl=`200px 150px repeat(${weeks}, minmax(160px,1fr))`;
-  // a single cell (sec is '' for the project's no-section row; week '' = No-date backlog column)
   const cellFor=(pid,sec,c,arr)=>`<div class="rm-cell ${c===''?'rm-backlog':''} ${c===now?'rm-nowcol':''}" data-rmcell data-proj="${pid}" data-section="${sec||''}" data-week="${c}">${arr.map(rmChip).join('')}<div class="rm-add" data-rmadd data-proj="${pid}" data-section="${sec||''}" data-week="${c}">＋</div></div>`;
-  // a full row: rowhead + backlog cell + one cell per week. `pred` selects the tasks,
-  // `dataSec` is the section a drop into this row assigns ('' = no section).
-  const rowFor=(pid, pred, dataSec, labelHtml, cls)=>{
-    const tk = state.tasks.filter(t=>!t.parentId && t.projectId===pid && !t.completed && pred(t));
-    let s = `<div class="rm-rowhead rm-sticky-left ${cls}">${labelHtml}</div>`;
-    s += cellFor(pid, dataSec, '', sortTasks(tk.filter(t=>!t.dueDate)));
-    cols.forEach(c=>{ const end=addDays(c,6); s += cellFor(pid, dataSec, c, sortTasks(tk.filter(t=>t.dueDate && t.dueDate>=c && t.dueDate<=end))); });
-    return s;
-  };
-  // header row
   let cells = `<div class="rm-corner rm-sticky-tl"></div><div class="rm-colhead rm-backlog-head rm-sticky-top">🗂 No date</div>`;
   cols.forEach(c=>{ const end=addDays(c,6); const cs=parseYmd(c), ce=parseYmd(end);
     const label = cs.getMonth()===ce.getMonth() ? `${MONTHS[cs.getMonth()]} ${cs.getDate()}–${ce.getDate()}` : `${MONTHS[cs.getMonth()]} ${cs.getDate()} – ${MONTHS[ce.getMonth()]} ${ce.getDate()}`;
     cells += `<div class="rm-colhead rm-sticky-top ${c===now?'rm-now':''}">${label}</div>`;
   });
-  // rows: each project is a group header (its no-section / stray-section tasks) followed by one row per section
-  for(const p of projects){
-    const secs = projectSections(p.id);
-    const secIds = new Set(secs.map(s=>s.id));
-    const projLabel = `<span class="proj-dot" style="background:${p.color}"></span><b>${esc(p.name)}</b>`;
-    // header row = tasks with no section OR a stale section id not present in this project (so nothing is ever hidden)
-    cells += rowFor(p.id, t=>!t.sectionId || !secIds.has(t.sectionId), '', projLabel, 'rm-projhead');
-    for(const s of secs) cells += rowFor(p.id, t=>t.sectionId===s.id, s.id, `<span class="rm-secdot"></span>${esc(s.name)}`, 'rm-sechead');
+  for(const r of rows){
+    cells += `<div class="rm-rowhead rm-sticky-left ${r.cls}">${r.label}</div>`;
+    cells += cellFor(r.pid, r.sec, '', sortTasks(r.tasks.filter(t=>!t.dueDate)));
+    cols.forEach(c=>{ const end=addDays(c,6); cells += cellFor(r.pid, r.sec, c, sortTasks(r.tasks.filter(t=>t.dueDate && t.dueDate>=c && t.dueDate<=end))); });
   }
-  return `<div class="view-title-row"><div class="view-title"><span class="emoji">🗺️</span>Roadmap</div>
-    <div class="view-actions">
-      <button class="icon-btn" data-rmnav="prev" title="Earlier">‹</button>
-      <button class="btn ghost" data-rmnav="today" style="padding:6px 12px">This week</button>
-      <button class="icon-btn" data-rmnav="next" title="Later">›</button>
-      <div class="seg" style="margin-left:6px"><button class="${weeks===4?'active':''}" data-rmweeks="4">4w</button><button class="${weeks===6?'active':''}" data-rmweeks="6">6w</button><button class="${weeks===8?'active':''}" data-rmweeks="8">8w</button></div>
-    </div></div>
-    <div class="view-sub">Rows are grouped by <b>project</b> then its <b>sections</b>; columns are weeks. Drag a task between weeks to reschedule, between rows to move it to another project/section, or out of “No date” to plan it. Click ＋ to add.</div>
+  return header +
+    `<div class="view-sub">Rows are grouped by <b>project</b> then its <b>sections</b>; columns are weeks. Drag a task between weeks to reschedule, between rows to move it to another project/section, or out of “No date” to plan it. Click ＋ to add.</div>
     <div class="rm-grid" style="grid-template-columns:${tmpl}">${cells}</div>`;
+}
+// Gantt rendering over the same rows + date window as the grid.
+function roadmapGanttHtml(rows, start, weeks){
+  const dayW=28, days=weeks*7, wEnd=addDays(start,days-1), today=todayStr();
+  const todayOff = dayDiff(today,start)*dayW;
+  // ruler
+  let ruler='';
+  for(let w=0;w<weeks;w++){ const ws=addDays(start,w*7); const cs=parseYmd(ws),ce=parseYmd(addDays(ws,6));
+    const label = cs.getMonth()===ce.getMonth()?`${MONTHS[cs.getMonth()]} ${cs.getDate()}–${ce.getDate()}`:`${MONTHS[cs.getMonth()]} ${cs.getDate()} – ${MONTHS[ce.getMonth()]} ${ce.getDate()}`;
+    ruler += `<div class="rmg-wk ${ws===weekStartStr(today)?'rmg-now':''}" style="width:${7*dayW}px">${label}</div>`;
+  }
+  let body='';
+  for(const r of rows){
+    const bars = r.tasks.map(t=>{
+      const end = t.deadline||t.dueDate; if(!end) return '';
+      const dur = t.estimate ? Math.max(1, Math.ceil(t.estimate/(60*8))) : 1;
+      const bStart = addDays(end, -(dur-1));
+      if (end<start || bStart>wEnd) return '';
+      const off = Math.max(0, dayDiff(bStart,start)), last = Math.min(days-1, dayDiff(end,start));
+      const w = (last-off+1)*dayW; if (w<=0) return '';
+      const col = t.priority<4 ? `var(--p${t.priority})` : 'var(--accent)';
+      return `<div class="rmg-bar" data-task="${t.id}" title="${esc(t.title)} — due ${esc(fmtDate(end))}" style="left:${off*dayW}px;width:${Math.max(dayW-3,w-3)}px;background:${col}">${t.milestone?'◆ ':''}${t.deadline?'⚑ ':''}<span class="rmg-bartxt">${esc(t.title)}</span></div>`;
+    }).join('');
+    const undated = r.tasks.filter(t=>!t.dueDate && !t.deadline).length;
+    body += `<div class="rmg-row"><div class="rmg-label rmg-sticky-left ${r.cls}">${r.label}${undated?`<span class="rmg-undated" title="${undated} with no date">○${undated}</span>`:''}</div>
+      <div class="rmg-track" style="width:${days*dayW}px">${bars}${(todayOff>=0&&todayOff<=days*dayW)?`<div class="rmg-todayline" style="left:${todayOff}px"></div>`:''}</div></div>`;
+  }
+  return `<div class="rmg-wrap" style="--dayw:${dayW}px">
+    <div class="rmg-headrow"><div class="rmg-corner rmg-sticky-tl">Timeline</div><div class="rmg-ruler" style="width:${days*dayW}px">${ruler}</div></div>
+    ${body}</div>`;
 }
 // Move a task into a project/section/week cell, preserving weekday where possible.
 function roadmapDrop(taskId, projId, sectionId, weekStart){
@@ -3779,7 +3906,7 @@ function startNotificationLoop() {
     });
   }, 30000);
 }
-const ICON_URI = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='112'%20fill='%236d5dfc'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E";
+const ICON_URI = "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='64'%20fill='%23ff6a00'/%3E%3Cpath%20d='M150%20268l70%2070%20142-152'%20fill='none'%20stroke='%23fff'%20stroke-width='46'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E";
 
 // ---------- PWA service worker ----------
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
