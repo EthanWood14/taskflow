@@ -860,6 +860,55 @@
   .task-row:hover { box-shadow: inset 0 0 0 1px var(--border); }
   .board-card, .stat-card, .stat-panel, .goal-card, .ach-card, .karma { border: 1px solid var(--border); }
   .modal, .cmd, .menu { border: 1px solid var(--border); }
+
+  /* Share chooser + Braindump */
+  .share-opt { display:flex; align-items:flex-start; gap:12px; padding:14px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:10px; cursor:pointer; transition:border-color .14s, background .14s, transform .12s; }
+  .share-opt:hover { border-color:var(--accent); background:var(--hover); transform:translateY(-1px); }
+  .share-opt.share-dim { opacity:.55; cursor:default; }
+  .share-opt.share-dim:hover { border-color:var(--border); background:transparent; transform:none; }
+  .share-ic { font-size:22px; }
+  .share-tx { display:flex; flex-direction:column; gap:3px; }
+  .share-tx b { font-size:14px; }
+  .share-tx span { font-size:12.5px; color:var(--text-dim); }
+  .bd-row { display:grid; grid-template-columns:22px 1fr 150px auto; align-items:center; gap:9px; padding:8px 0; border-bottom:1px solid var(--border); }
+  .bd-row .bd-inc { width:18px; height:18px; accent-color:var(--accent); }
+  .bd-row .bd-title { padding:7px 9px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); }
+  .bd-row .bd-proj { padding:7px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); }
+  .bd-meta { font-size:11.5px; color:var(--text-dim); white-space:nowrap; }
+  @media (max-width:600px){ .bd-row { grid-template-columns:22px 1fr; } .bd-row .bd-proj,.bd-meta { grid-column:2; } }
+
+  /* ====================================================================
+     SATISFYING — tactile press, springy feedback, completion flourish
+     ==================================================================== */
+  @media (prefers-reduced-motion: no-preference) {
+    button, .nav-item, .task-row, .board-card, .rm-chip, .pl-chip, .seg button, .qa-chip,
+    .mx-card, .cal-chip, .pl-task, .label-opt, .dep-opt, .pri-opt, .icon-btn, .sb-account,
+    .pres-pill, .ach-card, .stat-card, .goal-card, .color-swatch, .preset-sw, .rmg-bar, .checkbox {
+      transition: transform .14s cubic-bezier(.2,.85,.25,1), box-shadow .16s ease, background .14s ease, border-color .14s ease, color .12s ease, filter .14s ease;
+    }
+    button:active, .nav-item:active, .icon-btn:active, .seg button:active, .qa-chip:active,
+    .rm-chip:active, .pl-chip:active, .mx-card:active, .sb-account:active, .color-swatch:active,
+    .preset-sw:active, .label-opt:active, .dep-opt:active, .pri-opt:active, .pres-pill:active { transform: scale(.93); }
+    .btn:active, .btn.primary:active, .add-task-btn:active, .tb-signin:active, .wb-cta:active { transform: translateY(0) scale(.96); }
+    .task-row:active, .board-card:active, .ach-card:active, .stat-card:active, .goal-card:active { transform: scale(.992); }
+    .checkbox:active { transform: scale(.82); }
+    .checkbox.done { animation: chkpop .3s cubic-bezier(.2,1.6,.35,1); }
+    @keyframes chkpop { 0%{ transform:scale(.5); } 55%{ transform:scale(1.22); } 100%{ transform:scale(1); } }
+    .nav-item.active::before { animation: navbar .22s ease; }
+    @keyframes navbar { from{ transform:translateY(-50%) scaleY(0); } to{ transform:translateY(-50%) scaleY(1); } }
+    .toast { animation: toastin .3s cubic-bezier(.2,.9,.2,1); }
+    @keyframes toastin { from{ opacity:0; transform:translate(-50%,18px); } to{ opacity:1; transform:translate(-50%,0); } }
+    .nav-item:hover { transform: translateX(2px); }
+    .rm-chip:hover, .board-card:hover, .pl-task:hover { transform: translateY(-1px); }
+  }
+  /* completion flourish (spawned in JS, not motion-gated content) */
+  .xp-float { position:fixed; z-index:600; font-weight:800; font-size:14px; color:var(--accent);
+    text-shadow:0 0 14px rgba(255,106,0,.7); pointer-events:none; white-space:nowrap;
+    animation: xprise 1s ease-out forwards; }
+  @keyframes xprise { 0%{ opacity:0; transform:translate(-50%,8px) scale(.7); } 18%{ opacity:1; transform:translate(-50%,-3px) scale(1.05); } 100%{ opacity:0; transform:translate(-50%,-40px) scale(1); } }
+  .tap-ring { position:fixed; z-index:600; width:8px; height:8px; border-radius:50%;
+    border:2px solid var(--accent); transform:translate(-50%,-50%); pointer-events:none; animation: tapring .5s ease-out forwards; }
+  @keyframes tapring { 0%{ opacity:.85; width:8px; height:8px; } 100%{ opacity:0; width:50px; height:50px; } }
 </style>
 </head>
 <body>
@@ -1227,6 +1276,7 @@ function renderSidebar() {
 
       <div class="sb-section-head"><span class="caret ${secCol('actions')}" data-caret="actions">▾</span><span>Quick actions</span></div>
       <div data-group="actions" style="${grpStyle('actions')}">
+        <div class="nav-item is-action" data-act="braindump"><span class="ico">🧠</span><span class="label">Braindump…</span></div>
         <div class="nav-item is-action" data-act="weekly-review"><span class="ico">🔁</span><span class="label">Weekly Review…</span></div>
         <div class="nav-item is-action" data-act="bulk-add"><span class="ico">➕</span><span class="label">Bulk add tasks…</span></div>
         <div class="nav-item is-action" data-act="open-templates"><span class="ico">📄</span><span class="label">Templates…</span>${(state.templates||[]).length?`<span class="count">${state.templates.length}</span>`:''}</div>
@@ -1454,7 +1504,8 @@ function renderMain() {
     if (!p) { ui.view='today'; return render(); }
     const isBoard = p.view==='board';
     const actions = `<div class="seg"><button class="${!isBoard?'active':''}" data-projview="list">List</button><button class="${isBoard?'active':''}" data-projview="board">Board</button></div>
-      <button class="icon-btn" data-act="project-menu-btn" data-id="${p.id}" title="Project menu" style="margin-left:6px">⋯</button>`;
+      <button class="btn ghost" data-act="share-project" data-id="${p.id}" title="Share this project" style="margin-left:6px;padding:6px 12px">🔗 Share</button>
+      <button class="icon-btn" data-act="project-menu-btn" data-id="${p.id}" title="Project menu">⋯</button>`;
     if (isBoard) {
       m.innerHTML = topbarHtml() + `<div class="view-scroll"><div class="board-inner"><div class="view-title-row"><div class="view-title"><span class="proj-dot" style="background:${p.color};width:14px;height:14px;display:inline-block;margin-right:8px"></span>${esc(p.name)}</div><div class="view-actions">${actions}</div></div>${boardHtml(p)}</div></div>`;
       wireMain(); return;
@@ -1723,16 +1774,17 @@ function runImport(jsonText, replace) {
 // ============================================================
 //  MUTATIONS
 // ============================================================
-function toggleComplete(id) {
+function toggleComplete(id, originEl) {
   const t = state.tasks.find(x=>x.id===id); if(!t) return;
   // Dependency guard: don't allow completing a blocked task.
   if (!t.completed && isBlocked(t)) {
-    toast('Blocked — finish its dependencies first'); return;
+    haptic(20); toast('Blocked — finish its dependencies first'); return;
   }
   if (!t.completed && t.recurrence && t.dueDate) {
     const next = advanceRecurrence(t.dueDate, t.recurrence);
     t.dueDate = next; // recurring tasks roll forward instead of completing
     onCompletion(t);  // a recurring tick still counts toward karma/streaks
+    haptic(12); playSound('complete'); flourish(originEl, '🔁 +'+xpFor(t));
     toast('🔁 Rescheduled to '+fmtDate(next)+'  ·  +'+xpFor(t)+' XP');
   } else {
     t.completed = !t.completed;
@@ -1743,6 +1795,7 @@ function toggleComplete(id) {
       onCompletion(t);
       logActivity('completed', t.id, t.title);
       announceUnblocked(t.id);
+      haptic(14); flourish(originEl, '+'+xpFor(t)+' XP');
       playSound('complete');
       toast('✓ Completed  ·  +'+xpFor(t)+' XP', 'Undo', ()=>{ t.completed=false; t.completedAt=null; undoCompletion(t); persist(); render(); });
     }
@@ -1844,6 +1897,16 @@ function playSound(kind) {
     const notes = kind==='fanfare' ? [523,659,784,1047] : kind==='complete' ? [660,880] : [440];
     notes.forEach((f,i)=>{ const o=ac.createOscillator(), g=ac.createGain(); o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ac.destination); const t0=now+i*0.08; g.gain.setValueAtTime(0.0001,t0); g.gain.exponentialRampToValueAtTime(0.18,t0+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.22); o.start(t0); o.stop(t0+0.24); });
   } catch(e){}
+}
+// ---------- Satisfying micro-feedback ----------
+function haptic(ms){ try{ if(navigator.vibrate) navigator.vibrate(ms||10); }catch(e){} }
+function flourish(el, text){
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let x, y;
+  if (el && el.getBoundingClientRect) { const r=el.getBoundingClientRect(); x=r.left+r.width/2; y=r.top+r.height/2; }
+  else { x=innerWidth/2; y=innerHeight*0.4; }
+  if (text) { const f=document.createElement('div'); f.className='xp-float'; f.textContent=text; f.style.left=x+'px'; f.style.top=(y-10)+'px'; document.body.appendChild(f); setTimeout(()=>f.remove(),1000); }
+  const ring=document.createElement('div'); ring.className='tap-ring'; ring.style.left=x+'px'; ring.style.top=y+'px'; document.body.appendChild(ring); setTimeout(()=>ring.remove(),520);
 }
 
 // ---------- Accent / theme presets ----------
@@ -2296,6 +2359,8 @@ function wireSidebar() {
     else if(a==='open-pricing'){ ui.drawerOpen=false; openPricing(); }
     else if(a==='open-roadmap') goRoadmap('grid');
     else if(a==='open-gantt') goRoadmap('gantt');
+    else if(a==='share-project') openShareProject(id);
+    else if(a==='braindump'){ ui.drawerOpen=false; openBraindump(); }
     else if(a==='open-auth'){ ui.drawerOpen=false; openAuthModal('login'); }
     else if(a==='account-menu'){ accountMenu(e.clientX, e.clientY); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
@@ -2310,7 +2375,7 @@ function wireMain() {
     search.oninput = (e)=>{ ui.search=e.target.value; clearTimeout(window._st); window._st=setTimeout(()=>renderMain(),120); };
     if (ui.search) { search.focus(); search.setSelectionRange(search.value.length, search.value.length); }
   }
-  m.querySelectorAll('[data-check]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); toggleComplete(el.dataset.check); });
+  m.querySelectorAll('[data-check]').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); toggleComplete(el.dataset.check, el); });
   m.querySelectorAll('[data-task]').forEach(el=>el.onclick=(e)=>{
     if(e.target.closest('[data-check],[data-edit],[data-rowmenu],.task-actions')) return;
     if (e.metaKey||e.ctrlKey) { e.preventDefault(); toggleSelect(el.dataset.task); return; }
@@ -2333,6 +2398,8 @@ function wireMain() {
     else if(a==='expand-sidebar'){ ui.sidebarCollapsed=false; render(); }
     else if(a==='add-section') openSectionPrompt(el.dataset.proj);
     else if(a==='project-menu-btn') projectMenu(id, e.clientX, e.clientY);
+    else if(a==='share-project') openShareProject(id);
+    else if(a==='braindump') openBraindump();
     else if(a==='edit-label') openLabelModal(getLabel(id));
     else if(a==='edit-filter') openFilterModal(state.filters.find(f=>f.id===id));
     else if(a==='run-import') doRunImport();
@@ -2810,6 +2877,7 @@ function openCommandPalette() {
     {icon:'🏅', label:'Open Achievements', run:()=>goView('achievements')},
     {icon:'🍅', label:'Start Focus / Pomodoro', run:()=>openFocusPicker()},
     {icon:'✨', label:'Plan My Day (auto-schedule)', run:()=>planMyDay()},
+    {icon:'🧠', label:'Braindump — ramble into tasks', run:()=>openBraindump()},
     {icon:'➕', label:'Bulk add tasks', run:()=>openBulkAdd()},
     {icon:'🗺️', label:'Open Roadmap (weekly grid)', run:()=>goRoadmap('grid')},
     {icon:'📊', label:'Open Timeline / Gantt', run:()=>goRoadmap('gantt')},
@@ -3076,6 +3144,21 @@ function createProjectFromTemplate(tplId) {
 // ============================================================
 function b64enc(str){ return btoa(unescape(encodeURIComponent(str))); }
 function b64dec(str){ return decodeURIComponent(escape(atob(str))); }
+// Share chooser: a read-only snapshot link, or live multi-user collaboration via a workspace.
+function openShareProject(projId) {
+  const p = getProject(projId); if(!p) return;
+  const online = location.protocol.startsWith('http');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal"><div class="modal-head"><div class="crumbs">🔗 Share “${esc(p.name)}”</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">
+      <div class="share-opt" id="sh-readonly">
+        <div class="share-ic">🔗</div><div class="share-tx"><b>Read-only link</b><span>Anyone with the link sees a live-frozen snapshot of this project. No account needed.</span></div></div>
+      <div class="share-opt ${online?'':'share-dim'}" id="sh-collab">
+        <div class="share-ic">👥</div><div class="share-tx"><b>Collaborate live</b><span>${online?'Invite people to a shared <b>workspace</b> — everyone edits together in real time, with presence and roles.':'Open the app from your web (Railway) URL to enable live collaboration.'}</span></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Cancel</button></div></div></div>`;
+  $('#sh-readonly').onclick=()=>shareProject(projId);
+  const c=$('#sh-collab'); if(c && online) c.onclick=()=>{ if(SYNC.on){ openSettings(); setTimeout(()=>{ const inv=$('#sync-invite'); if(inv) inv.click(); }, 60); } else { openAuthModal('login'); toast('Sign in to invite collaborators'); } };
+}
 function shareProject(projId) {
   const p = getProject(projId); if(!p) return;
   const secById = {}; projectSections(projId).forEach(s=>secById[s.id]=s.name);
@@ -3661,6 +3744,124 @@ function openBulkAdd() {
   $('#bulk-go').onclick=()=>{ const lines=$('#bulk-text').value.split('\n').map(s=>s.trim()).filter(Boolean); const pid=$('#bulk-proj').value;
     lines.forEach(l=>addTaskFromParse(parseQuickAdd(l), pid, null)); persist(); closeModal(); render(); toast(`Added ${lines.length} tasks`); };
   setTimeout(()=>$('#bulk-text').focus(),30);
+}
+
+// ============================================================
+//  FEATURE: AI Braindump — ramble freely, get categorized tasks
+// ============================================================
+// Split a stream-of-consciousness into task-sized chunks (keeps "milk and eggs" intact;
+// only splits on sentence ends + explicit connectives).
+const BD_VERBS = 'call|email|e-mail|finish|buy|grab|get|review|water|send|book|schedule|pay|fix|update|write|make|prep|prepare|draft|plan|clean|order|check|reply|respond|text|message|read|research|design|build|test|ship|launch|renew|cancel|submit|file|organize|sort|set up|setup|remind|wash|cook|pick up|drop off|return|sign|print|download|upload|install|configure|deploy|publish|post';
+function splitBraindump(text){
+  const out=[];
+  String(text||'').split(/[\n.!?;•]+/).forEach(seg=>{
+    seg.split(new RegExp('\\b(?:and then|oh,? and|also|plus|after that|next(?: up)?|then|and (?:i|gotta|also|remember)|, and)\\b','i'))
+      .forEach(part=>{
+        part.split(new RegExp('\\s*,\\s*(?=(?:i |i\'?ll |gotta |need |have |remember |make sure |don\'?t forget |'+BD_VERBS+')\\b)','i'))
+          .forEach(s=>{ s=s.trim(); if(s) out.push(s); });
+      });
+  });
+  return out.filter(s=>s.replace(/[^a-z0-9]/gi,'').length>2);
+}
+// Strip conversational filler and leading "I need to / gotta / remember to …", and trailing punctuation.
+function cleanBraindumpChunk(s){
+  let prev;
+  do { prev=s;
+    s=s.replace(/^\s*(?:um+|uh+|er+|like|so|okay|ok|well|and|then|also|yeah|hmm|i think|maybe|i guess|basically|honestly|kinda|sorta|at some point|oh)\b[,\s]*/i,'');
+    s=s.replace(/^\s*(?:i (?:really |also |still |just )?(?:need|have|want|wanna|gotta|should|might|must|ought)(?: to)?|remember to|don'?t forget to|make sure (?:to|i)|gotta|i'?ll|let'?s|we (?:need|should)(?: to)?|got to|have to)\b[,\s]*/i,'');
+  } while(s!==prev);
+  s=s.replace(/\s+/g,' ').replace(/[,;:\s]+$/,'').trim();
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+// Guess the most appropriate project from words shared with project/section/task/label names.
+function guessBraindumpProject(text){
+  const lc=' '+text.toLowerCase()+' ';
+  let best=getProject('inbox'), bestScore=1.5;
+  for(const p of activeProjects()){
+    let score=0;
+    p.name.toLowerCase().split(/\W+/).forEach(w=>{ if(w.length>2 && lc.includes(w)) score+=3; });
+    projectSections(p.id).forEach(s=>{ if(s.name.length>2 && lc.includes(s.name.toLowerCase())) score+=2; });
+    const words=new Set(); state.tasks.filter(t=>t.projectId===p.id).forEach(t=>t.title.toLowerCase().split(/\W+/).forEach(w=>{ if(w.length>3) words.add(w); }));
+    words.forEach(w=>{ if(lc.includes(' '+w)) score+=1; });
+    state.labels.forEach(l=>{ if(l.name.length>2 && lc.includes(l.name.toLowerCase()) && state.tasks.some(t=>t.projectId===p.id&&t.labels.includes(l.id))) score+=1; });
+    if(score>bestScore){ bestScore=score; best=p; }
+  }
+  return best;
+}
+function categorizeBraindump(text){
+  return splitBraindump(text).map(chunk=>{
+    const parsed=parseQuickAdd(cleanBraindumpChunk(chunk));
+    const proj=guessBraindumpProject(chunk);
+    let sec=null; projectSections(proj.id).forEach(s=>{ if(s.name.length>2 && chunk.toLowerCase().includes(s.name.toLowerCase())) sec=s.id; });
+    return { title:(parsed.title||cleanBraindumpChunk(chunk)).slice(0,140), projectId:proj.id, sectionId:sec,
+      priority:parsed.priority||4, date:parsed.date||null, time:parsed.time||null, recurrence:parsed.recurrence||null, estimate:parsed.estimate||null, labelNames:parsed.labelNames||[] };
+  }).filter(p=>p.title && p.title.length>1);
+}
+let _bdProposals=[];
+function openBraindump(){
+  const aiAvailable = location.protocol.startsWith('http');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal wide"><div class="modal-head"><div class="crumbs">🧠 Braindump</div><button class="icon-btn" data-act="close-modal">✕</button></div>
+    <div class="modal-body">
+      <div class="view-sub" style="padding-bottom:10px">Just talk or type everything on your mind — messy, rambling, out of order. TaskFlow pulls out the tasks and files them into the right projects.</div>
+      <div class="qa-inputrow"><textarea class="import-area" id="bd-text" style="min-height:150px;white-space:pre-wrap" placeholder="ok so I really need to call the contractor tomorrow about the quote, and gotta finish the Q3 deck this week it's urgent, oh and water the plants every 3 days, also remember to buy milk and eggs…"></textarea>
+        <button class="qa-mic" id="bd-mic" title="Dictate" style="align-self:flex-start">🎤</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn primary" id="bd-go">⚡ Organize</button>
+        <button class="btn ghost" id="bd-ai" title="Use Claude for smarter understanding">✨ Organize with AI</button>
+        <span id="bd-status" class="sync-note" style="align-self:center"></span>
+      </div>
+      <div id="bd-preview"></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-act="close-modal">Cancel</button><button class="btn primary" id="bd-add" style="display:none">Add tasks</button></div></div></div>`;
+  wireVoice($('#bd-mic'), $('#bd-text'));
+  $('#bd-go').onclick=()=>{ const t=$('#bd-text').value.trim(); if(!t){ $('#bd-status').textContent='Type or dictate something first.'; return; } bdPreview(categorizeBraindump(t), 'quick organizer'); };
+  $('#bd-ai').onclick=()=>braindumpAI();
+  $('#bd-add').onclick=()=>bdCommit();
+  setTimeout(()=>$('#bd-text').focus(),30);
+}
+function bdPreview(items, source){
+  _bdProposals=items;
+  const host=$('#bd-preview'); const add=$('#bd-add'); const st=$('#bd-status');
+  if(!items.length){ host.innerHTML=`<div class="sync-note" style="margin-top:12px">Couldn't find any tasks in that — try adding more detail.</div>`; add.style.display='none'; return; }
+  const projOpts=pid=>['inbox',...activeProjects().map(p=>p.id)].map(id=>{const p=getProject(id);return `<option value="${id}" ${id===pid?'selected':''}>${esc(p.name)}</option>`;}).join('');
+  host.innerHTML = `<div class="detail-section-title" style="margin:16px 0 6px">Found ${items.length} task${items.length===1?'':'s'} <span class="pill">via ${esc(source)}</span></div>` +
+    items.map((p,i)=>`<div class="bd-row" data-bdrow="${i}">
+      <input type="checkbox" class="bd-inc" checked>
+      <input type="text" class="bd-title" value="${esc(p.title)}">
+      <select class="bd-proj">${projOpts(p.projectId)}</select>
+      <span class="bd-meta">${p.priority<4?`<span class="flag-p${p.priority}">⚑P${p.priority}</span> `:''}${p.date?`📅 ${esc(fmtDate(p.date))}`:''}${p.recurrence?' 🔁':''}${p.estimate?` ~${esc(fmtEst(p.estimate))}`:''}${(p.labelNames||[]).map(l=>` 🏷${esc(l)}`).join('')}</span>
+    </div>`).join('');
+  add.style.display=''; add.textContent=`Add ${items.length} task${items.length===1?'':'s'}`;
+  if(st) st.textContent='';
+}
+function bdCommit(){
+  const rows=[...modalRoot.querySelectorAll('[data-bdrow]')]; let n=0;
+  rows.forEach(row=>{ if(!row.querySelector('.bd-inc').checked) return;
+    const pr=_bdProposals[+row.dataset.bdrow]; if(!pr) return;
+    const title=row.querySelector('.bd-title').value.trim(); if(!title) return;
+    const pid=row.querySelector('.bd-proj').value;
+    const sec = (pid===pr.projectId) ? pr.sectionId : null;
+    addTaskFromParse({ title, date:pr.date, time:pr.time, priority:pr.priority, recurrence:pr.recurrence, labelNames:pr.labelNames||[], estimate:pr.estimate }, pid, sec);
+    n++;
+  });
+  persist(); closeModal(); render(); confettiBurst(); playSound('fanfare'); haptic(18); toast('🧠 Braindump → '+n+' task'+(n===1?'':'s')+' filed');
+}
+async function braindumpAI(){
+  const t=$('#bd-text').value.trim(); if(!t){ $('#bd-status').textContent='Type or dictate something first.'; return; }
+  const btn=$('#bd-ai'), st=$('#bd-status'); btn.disabled=true; const lbl=btn.textContent; btn.textContent='Thinking…'; st.textContent='';
+  try {
+    const projects = [getProject('inbox'),...activeProjects()].map(p=>({ name:p.name, sections:projectSections(p.id).map(s=>s.name) }));
+    const d = await SYNC.api('/api/braindump', { method:'POST', body: JSON.stringify({ text:t, projects, today: todayStr() }) });
+    const items = (d.tasks||[]).map(x=>{
+      const proj = [getProject('inbox'),...activeProjects()].find(p=>p.name.toLowerCase()===String(x.project||'').toLowerCase()) || getProject('inbox');
+      let sec=null; projectSections(proj.id).forEach(s=>{ if(x.section && s.name.toLowerCase()===String(x.section).toLowerCase()) sec=s.id; });
+      return { title:String(x.title||'').slice(0,140), projectId:proj.id, sectionId:sec, priority:[1,2,3,4].includes(x.priority)?x.priority:4, date:x.dueDate||null, time:x.dueTime||null, recurrence:x.recurrence||null, estimate:(typeof x.estimate==='number'?x.estimate:null), labelNames:x.labels||[] };
+    }).filter(p=>p.title);
+    bdPreview(items, 'Claude AI');
+  } catch(e){
+    st.textContent = /not configured|501|404/i.test(e.message||'') ? 'AI isn’t connected yet — used the quick organizer instead. (Add an Anthropic key — see BACKEND.md.)' : ('AI error: '+e.message+' — used quick organizer.');
+    bdPreview(categorizeBraindump(t), 'quick organizer');
+  } finally { btn.disabled=false; btn.textContent=lbl; }
 }
 
 // ============================================================

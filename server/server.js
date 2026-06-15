@@ -281,6 +281,36 @@ app.post('/api/join', asyncH(async (req, res) => {
   res.json({ workspace: ws });
 }));
 
+// ---------- AI Braindump (Claude) ----------
+// Turns a rambling brain-dump into structured tasks. Active once ANTHROPIC_API_KEY is set.
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+const BRAINDUMP_MODEL = process.env.BRAINDUMP_MODEL || 'claude-sonnet-4-6';
+if (!ANTHROPIC_KEY) console.warn('[taskflow] AI braindump disabled — set ANTHROPIC_API_KEY to enable');
+app.post('/api/braindump', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Sign in to use AI organize' });
+  if (!ANTHROPIC_KEY) return res.status(501).json({ error: 'AI not configured on this server — set ANTHROPIC_API_KEY (see BACKEND.md)' });
+  const text = String(req.body.text || '').slice(0, 8000);
+  if (!text.trim()) return res.status(400).json({ error: 'Empty brain-dump' });
+  const projects = Array.isArray(req.body.projects) ? req.body.projects.slice(0, 60) : [];
+  const today = String(req.body.today || '').slice(0, 10);
+  const system = 'You are a task-extraction assistant. Read a person\'s messy, conversational, stream-of-consciousness brain-dump and extract concrete, actionable tasks. Be faithful — do not invent tasks. Each task gets a short imperative title. Assign every task to the single most appropriate EXISTING project by name (fall back to "Inbox"). Only use a section if it matches one listed under that project. Convert relative dates to absolute YYYY-MM-DD using the given today. Respond with ONLY a JSON object, no prose, no code fences.';
+  const userMsg = `Today is ${today}.\nExisting projects and their sections (assign tasks to these):\n${JSON.stringify(projects)}\n\nBrain-dump:\n"""\n${text}\n"""\n\nReturn ONLY: {"tasks":[{"title":"...","project":"<existing project name or Inbox>","section":"<section name or null>","priority":1-4,"dueDate":"YYYY-MM-DD","dueTime":"HH:MM","recurrence":"every week|every 3 days|...","estimate":<minutes>,"labels":["..."]}]}. Omit any field you cannot infer (priority defaults to 4).`;
+  let d;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: BRAINDUMP_MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: userMsg }] }),
+    });
+    d = await r.json();
+    if (!r.ok) return res.status(502).json({ error: (d.error && d.error.message) || 'AI request failed' });
+  } catch (e) { return res.status(502).json({ error: 'Could not reach the AI service' }); }
+  const txt = (d.content && d.content[0] && d.content[0].text) || '';
+  const m = txt.match(/\{[\s\S]*\}/);
+  let parsed; try { parsed = JSON.parse(m ? m[0] : txt); } catch (e) { return res.status(502).json({ error: 'AI returned unparseable output' }); }
+  res.json({ tasks: Array.isArray(parsed.tasks) ? parsed.tasks.slice(0, 80) : [] });
+}));
+
 // static app
 app.use(express.static(PUBLIC_DIR, { extensions: ['html'] }));
 app.get('*', (req, res) => { if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'Not found' }); res.sendFile(path.join(PUBLIC_DIR, 'index.html')); });

@@ -58,6 +58,18 @@ The server ships with a complete **Stripe** subscription integration: secure Che
 
 Billing endpoints: `GET /api/billing/config` · `POST /api/billing/checkout` · `POST /api/billing/portal` · `POST /api/billing/webhook` (raw-body, signature-verified). Card data never touches your server — it all happens on Stripe-hosted pages.
 
+## 🧠 AI Braindump (Claude) — optional
+
+The **Braindump** feature lets you ramble (voice or text) and turns it into categorized tasks. It works out of the box with a built-in heuristic organizer. Flip on **"Organize with AI"** (much smarter understanding) by giving the server an Anthropic key:
+
+1. Get an API key at **console.anthropic.com** → API Keys.
+2. In **Railway → your service → Variables**, add:
+   - `ANTHROPIC_API_KEY` = `sk-ant-…`
+   - `BRAINDUMP_MODEL` = `claude-sonnet-4-6` *(optional; this is the default — use `claude-haiku-4-5-20251001` for cheaper/faster)*
+3. Redeploy. The **✨ Organize with AI** button in Braindump now sends your dump to Claude server-side (key stays on the server) and returns tasks sorted into your real projects/sections.
+
+Endpoint: `POST /api/braindump` (auth required) → `{tasks:[…]}`. Until the key is set it returns `501` and the app silently falls back to the local organizer. This is **separate from your Claude.ai subscription** — it's the pay-as-you-go API (a braindump costs a fraction of a cent).
+
 ## Switching to Postgres (optional)
 1. In your Railway project: **New → Database → Add PostgreSQL**.
 2. Railway injects `DATABASE_URL` into your service automatically (same project). Redeploy.
