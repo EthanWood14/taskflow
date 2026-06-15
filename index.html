@@ -3313,7 +3313,7 @@ const SYNC = {
   name: localStorage.getItem('tf.name') || null,
   clientId: localStorage.getItem('tf.clientId') || (function(){ const id='c_'+Math.random().toString(36).slice(2,10); localStorage.setItem('tf.clientId',id); return id; })(),
   workspaces: [], activeWs: localStorage.getItem('tf.ws') || null,
-  ws: null, status: 'off', _suppress: false, _pushTimer: null, online: [], _removed: false,
+  ws: null, status: 'off', _suppress: false, _pushTimer: null, online: [], _removed: false, ai: false,
   billing: { enabled: false, plan: 'free', priceDisplay: '$1.50 / user / mo', unitCents: 150, trialDays: 14, seats: 1, freeLimits: { workspaces: 2, members: 5 } },
   get on(){ return !!this.token; },
   get active(){ return (this.workspaces||[]).find(w=>w.id===this.activeWs) || (this.workspaces||[])[0] || null; },
@@ -3597,7 +3597,8 @@ async function renderMembersList() {
 function initSync() {
   // Only attempt when served from a backend origin (http/https), not file://
   if (SYNC.on && location.protocol.startsWith('http')) {
-    SYNC.api('/api/health').then(async ()=>{
+    SYNC.api('/api/health').then(async (h)=>{
+      SYNC.ai = !!(h && h.ai);
       try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); }
       catch(e){ SYNC.status='off'; }
     }).catch(()=>{ SYNC.status='off'; });
@@ -3807,7 +3808,7 @@ function openBraindump(){
         <button class="qa-mic" id="bd-mic" title="Dictate" style="align-self:flex-start">🎤</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn primary" id="bd-go">⚡ Organize</button>
-        <button class="btn ghost" id="bd-ai" title="Use Claude for smarter understanding">✨ Organize with AI</button>
+        <button class="btn ghost" id="bd-ai" title="${(SYNC.on&&SYNC.ai)?'Use Claude for smarter understanding':(SYNC.on?'Add ANTHROPIC_API_KEY in Railway to enable (see BACKEND.md)':'Sign in to use AI')}">${(SYNC.on&&SYNC.ai)?'✨ Organize with AI':(SYNC.on?'✨ AI — needs setup':'✨ AI — sign in')}</button>
         <span id="bd-status" class="sync-note" style="align-self:center"></span>
       </div>
       <div id="bd-preview"></div>

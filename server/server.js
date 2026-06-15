@@ -96,7 +96,7 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyn
 app.use(express.json({ limit: '8mb' }));
 app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); if (req.method === 'OPTIONS') return res.sendStatus(204); next(); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY }));
 
 app.post('/api/signup', asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || ''), name = String(req.body.name || '').trim().slice(0, 60);
