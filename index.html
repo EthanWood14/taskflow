@@ -1098,8 +1098,17 @@ function migrate(s) {
     if (t.type===undefined) t.type = 'task';        // task|bug|feature
     if (t.attachments===undefined) t.attachments = [];
     if (t.custom===undefined) t.custom = {};
+    if (t.externalId===undefined) t.externalId = null;
+    if (t.startDate===undefined) t.startDate = null;
   });
-  (s.projects||[]).forEach(p=>{ if(p.folderId===undefined) p.folderId=null; });
+  (s.projects||[]).forEach(p=>{
+    if(p.folderId===undefined) p.folderId=null;
+    if(p.externalId===undefined) p.externalId=null;
+    if(p.startDate===undefined) p.startDate=null;
+    if(p.dueDate===undefined) p.dueDate=null;
+    if(p.custom===undefined) p.custom={};
+  });
+  (s.sections||[]).forEach(sec=>{ if(sec.externalId===undefined) sec.externalId=null; });
   return s; // accent applied during init (after THEME_PRESETS is defined)
 }
 
@@ -1112,7 +1121,7 @@ function seed() {
   const secDone = { id: uid('sec'), projectId: pWork.id, name:'Done', order:2 };
   const lUrgent = { id: uid('lbl'), name:'urgent', color:'#dc4c3e' };
   const lHome = { id: uid('lbl'), name:'home', color:'#7ecc49' };
-  const t = (o) => Object.assign({ id:uid('task'), projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0, estimate:null, status:'todo', deadline:null, milestone:false, type:'task', attachments:[], custom:{} }, o);
+  const t = (o) => Object.assign({ id:uid('task'), externalId:null, projectId:'inbox', sectionId:null, parentId:null, title:'', description:'', priority:4, startDate:null, dueDate:null, dueTime:null, recurrence:null, labels:[], assignee:null, completed:false, completedAt:null, createdAt:Date.now(), order:0, dependsOn:[], timeSpent:0, estimate:null, status:'todo', deadline:null, milestone:false, type:'task', attachments:[], custom:{} }, o);
   const tasks = [
     t({ title:'Welcome to TaskFlow 👋 — click me to see details', description:'This is a full task detail view. You can edit everything here: description, priority, due date, labels, subtasks, and comments.', projectId:'inbox', priority:1, dueDate: todayStr(), order:0 }),
     t({ title:'Try the natural-language Quick Add', description:'Press "q" or click + Add task. Type: "Email Sam tomorrow at 9am p1 @urgent"', projectId:'inbox', priority:2, dueDate: todayStr(), order:1, labels:[lUrgent.id] }),
@@ -1617,16 +1626,23 @@ function boardCardHtml(t) {
 // ============================================================
 const IMPORT_SCHEMA = `{
   "projects": [
-    { "name": "Work", "color": "#14aaf5", "view": "board",
-      "sections": ["To Do", "In Progress", "Done"] }
+    { "externalId": "asana-project-123", "name": "Work",
+      "color": "#14aaf5", "view": "board", "archived": false,
+      "sections": [
+        { "externalId": "asana-section-456", "name": "To Do" },
+        "In Progress", "Done"
+      ] }
   ],
   "labels": [ { "name": "urgent", "color": "#dc4c3e" } ],
   "tasks": [
     {
       "title": "Email the client about the proposal",
+      "externalId": "asana-task-789", // optional stable source ID; makes re-imports idempotent
       "description": "Optional longer notes.\\nSupports multiple lines.",
       "project": "Work",            // matches a project name; omit => Inbox
+      "projectExternalId": "asana-project-123", // preferred when source projects may share a name
       "section": "To Do",           // optional; matches a section in that project
+      "sectionExternalId": "asana-section-456", // optional stable source section ID
       "priority": 1,                 // 1 (highest) .. 4 (none). default 4
       "dueDate": "2026-06-10",      // YYYY-MM-DD, optional
       "dueTime": "09:00",           // HH:MM 24h, optional
@@ -1634,7 +1650,10 @@ const IMPORT_SCHEMA = `{
                                      //   "every 2 weeks"|"every monday"
       "labels": ["urgent"],         // optional; created if missing
       "assignee": "Sam",            // optional (Asana-style)
+      "startDate": "2026-05-01",    // optional source start date
       "completed": false,            // optional
+      "createdAt": "2026-05-01T12:00:00Z", // optional source timestamp
+      "completedAt": null,                  // optional source timestamp
       "subtasks": [                  // optional nested checklist
         { "title": "Draft email", "completed": true },
         { "title": "Send", "priority": 2 }
@@ -1692,8 +1711,15 @@ function runImport(jsonText, replace) {
   if (replace) {
     state = { projects:[{id:'inbox',name:'Inbox',color:'#808080',view:'list',order:0,archived:false,system:true}], sections:[], labels:[], tasks:[], comments:[], filters: state.filters, settings: state.settings };
   }
+  state.stats=Object.assign({ xp:0, level:1, streak:0, longestStreak:0, lastActiveDate:null, totalCompleted:0 },state.stats||{});
+  state.activity=state.activity||{};
 
-  const stats = { tasks:0, projects:0, labels:0, sections:0, subtasks:0, comments:0 };
+  const stats = { tasks:0, updated:0, projects:0, labels:0, sections:0, subtasks:0, comments:0 };
+  const asTime = (value, fallback=null) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) { const n=Date.parse(value); if(Number.isFinite(n)) return n; }
+    return fallback;
+  };
   const labelByName = {};
   state.labels.forEach(l=>labelByName[l.name.toLowerCase()]=l);
   const ensureLabel = (name, color) => {
@@ -1705,55 +1731,75 @@ function runImport(jsonText, replace) {
   (data.labels||[]).forEach(l => ensureLabel(l.name, l.color));
 
   const projByName = {};
+  const projByExternalId = {};
   state.projects.forEach(p=>projByName[p.name.toLowerCase()]=p);
-  const ensureProject = (name, color, view) => {
+  state.projects.forEach(p=>{ if(p.externalId) projByExternalId[String(p.externalId)]=p; });
+  const ensureProject = (name, color, view, externalId=null, archived=null) => {
     if (!name) return getProject('inbox');
     const k = String(name).toLowerCase();
-    if (projByName[k]) return projByName[k];
-    const p = { id: uid('proj'), name:String(name), color: color || PROJECT_COLORS[state.projects.length % PROJECT_COLORS.length], view: view==='board'?'board':'list', order: state.projects.length, archived:false };
-    state.projects.push(p); projByName[k]=p; stats.projects++; return p;
+    if (externalId && projByExternalId[String(externalId)]) {
+      const p=projByExternalId[String(externalId)];
+      p.name=String(name); if(color)p.color=color; if(view)p.view=view==='board'?'board':'list'; if(archived!==null)p.archived=!!archived;
+      return p;
+    }
+    if (!externalId && projByName[k]) return projByName[k];
+    const p = { id: uid('proj'), externalId:externalId?String(externalId):null, name:String(name), color: color || PROJECT_COLORS[state.projects.length % PROJECT_COLORS.length], view: view==='board'?'board':'list', order: state.projects.length, archived:!!archived };
+    state.projects.push(p); if(!projByName[k])projByName[k]=p; if(p.externalId)projByExternalId[p.externalId]=p; stats.projects++; return p;
   };
   const sectionByKey = {};
+  const sectionByExternalId = {};
   state.sections.forEach(s=>sectionByKey[s.projectId+'::'+s.name.toLowerCase()]=s);
-  const ensureSection = (proj, name) => {
+  state.sections.forEach(s=>{ if(s.externalId)sectionByExternalId[String(s.externalId)]=s; });
+  const ensureSection = (proj, name, externalId=null) => {
     if (!name) return null;
+    if (externalId && sectionByExternalId[String(externalId)]) return sectionByExternalId[String(externalId)];
     const k = proj.id+'::'+String(name).toLowerCase();
-    if (sectionByKey[k]) return sectionByKey[k];
-    const s = { id: uid('sec'), projectId:proj.id, name:String(name), order: projectSections(proj.id).length };
-    state.sections.push(s); sectionByKey[k]=s; stats.sections++; return s;
+    if (!externalId && sectionByKey[k]) return sectionByKey[k];
+    const s = { id: uid('sec'), externalId:externalId?String(externalId):null, projectId:proj.id, name:String(name), order: projectSections(proj.id).length };
+    state.sections.push(s); if(!sectionByKey[k])sectionByKey[k]=s; if(s.externalId)sectionByExternalId[s.externalId]=s; stats.sections++; return s;
   };
 
   (data.projects||[]).forEach(p => {
-    const proj = ensureProject(p.name, p.color, p.view);
-    (p.sections||[]).forEach(sn => ensureSection(proj, sn));
+    const proj = ensureProject(p.name, p.color, p.view, p.externalId, p.archived===undefined?null:p.archived);
+    proj.startDate=p.startDate||proj.startDate||null; proj.dueDate=p.dueDate||proj.dueDate||null; proj.custom=Object.assign({},proj.custom||{},p.custom||{});
+    (p.sections||[]).forEach(rawSec => { const sec=typeof rawSec==='string'?{name:rawSec}:rawSec; ensureSection(proj, sec&&sec.name, sec&&sec.externalId); });
   });
 
+  const taskByExternalId = {};
+  state.tasks.forEach(t=>{ if(t.externalId)taskByExternalId[String(t.externalId)]=t; });
   const addTask = (raw, parentId=null) => {
-    const proj = parentId ? null : ensureProject(raw.project, null, null);
-    const sec = (proj && raw.section) ? ensureSection(proj, raw.section) : null;
+    const proj = parentId ? null : ensureProject(raw.project, null, null, raw.projectExternalId||null);
+    const sec = (proj && raw.section) ? ensureSection(proj, raw.section, raw.sectionExternalId||null) : null;
     const labelIds = (raw.labels||[]).map(n => ensureLabel(n).id);
-    const t = {
-      id: uid('task'),
+    const externalId=raw.externalId?String(raw.externalId):null;
+    let t = externalId ? taskByExternalId[externalId] : null;
+    const wasExisting=!!t;
+    const wasCompleted=!!(t&&t.completed);
+    const parent=parentId ? state.tasks.find(x=>x.id===parentId) : null;
+    const next = {
+      externalId,
       projectId: parentId ? (state.tasks.find(x=>x.id===parentId)||{}).projectId || 'inbox' : (proj?proj.id:'inbox'),
-      sectionId: sec?sec.id:null,
+      sectionId: parentId ? (parent&&parent.sectionId)||null : (sec?sec.id:null),
       parentId,
       title: String(raw.title||'Untitled'),
       description: raw.description||'',
       priority: [1,2,3,4].includes(raw.priority)?raw.priority:4,
+      startDate: raw.startDate||null,
       dueDate: raw.dueDate||null,
       dueTime: raw.dueTime||null,
       recurrence: raw.recurrence||null,
       labels: labelIds,
       assignee: raw.assignee||null,
       completed: !!raw.completed,
-      completedAt: raw.completed?Date.now():null,
-      createdAt: Date.now(),
+      completedAt: raw.completed?asTime(raw.completedAt,Date.now()):null,
+      createdAt: asTime(raw.createdAt,wasExisting?t.createdAt:Date.now()),
       dependsOn: [], timeSpent: 0, estimate: (typeof raw.estimate==='number'?raw.estimate:null),
       status: raw.completed?'done':(raw.status||'todo'), deadline: raw.deadline||null, milestone: !!raw.milestone, type: raw.type||'task', attachments: [], custom: raw.custom||{},
-      order: state.tasks.filter(x=>x.projectId===(proj?proj.id:'inbox')&&!x.parentId).length,
+      order: parentId ? state.tasks.filter(x=>x.parentId===parentId).length : state.tasks.filter(x=>x.projectId===(proj?proj.id:'inbox')&&!x.parentId).length,
     };
-    state.tasks.push(t);
-    if (parentId) stats.subtasks++; else stats.tasks++;
+    if(wasExisting){ Object.assign(t,next); stats.updated++; }
+    else { t=Object.assign({id:uid('task')},next); state.tasks.push(t); if(externalId)taskByExternalId[externalId]=t; if (parentId) stats.subtasks++; else stats.tasks++; }
+    if(next.completed&&!wasCompleted){ const ds=ymd(new Date(next.completedAt)); state.activity[ds]=(state.activity[ds]||0)+1; state.stats.totalCompleted=(state.stats.totalCompleted||0)+1; }
     (raw.subtasks||[]).forEach(st => addTask(st, t.id));
     (raw.comments||[]).forEach(c => { state.comments.push({ id:uid('cm'), taskId:t.id, text:String(c.text||c), author:c.author||state.settings.userName, createdAt:Date.now() }); stats.comments++; });
     return t;
@@ -1764,6 +1810,7 @@ function runImport(jsonText, replace) {
   const parts = [];
   if (stats.tasks) parts.push(stats.tasks+' tasks');
   if (stats.subtasks) parts.push(stats.subtasks+' subtasks');
+  if (stats.updated) parts.push(stats.updated+' updated');
   if (stats.projects) parts.push(stats.projects+' projects');
   if (stats.sections) parts.push(stats.sections+' sections');
   if (stats.labels) parts.push(stats.labels+' labels');

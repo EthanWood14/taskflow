@@ -104,6 +104,8 @@ Use the **Load sample** button to see a working example first.
 
 Only `title` is required on a task. Importing **merges** by default (or tick "Replace all" to start clean). Projects/sections/labels are created automatically if they don't exist.
 
+For migrations from another task system, optional `externalId`, `projectExternalId`, and `sectionExternalId` fields make repeat imports idempotent and keep separate source projects that happen to share a name. Optional `createdAt` and `completedAt` timestamps preserve historical completion data; projects may also include `archived`, `startDate`, and `dueDate`.
+
 See **`claude-import-prompt.txt`** for a copy-paste prompt to hand to Claude.
 
 ## Backup / move your data
