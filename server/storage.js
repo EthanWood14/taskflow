@@ -68,6 +68,11 @@ export class JsonStore {
   async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
   async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; if (fields.recoveryHash) u.recoveryHash = fields.recoveryHash; if (fields.apiTokenHash !== undefined) u.apiTokenHash = fields.apiTokenHash; this._save(); return u; }
   async getUserByApiTokenHash(h) { if (!h) return null; return Object.values(this.db.users).find(x => x.apiTokenHash && x.apiTokenHash === h) || null; }
+  // Staged imports: payloads parked by code until a signed-in member applies them (see /api/imports/*)
+  async stageImport(code, rec) { this.db.staged = this.db.staged || {}; this.db.staged[code] = rec; this._save(); return code; }
+  async getStagedImport(code) { return (this.db.staged || {})[code] || null; }
+  async deleteStagedImport(code) { if (this.db.staged && this.db.staged[code]) { delete this.db.staged[code]; this._save(); } return true; }
+  async cleanupStaged(maxAgeMs) { const now = Date.now(); let n = 0; for (const [c, r] of Object.entries(this.db.staged || {})) if (!r || now - (r.createdAt || 0) > maxAgeMs) { delete this.db.staged[c]; n++; } if (n) this._save(); return n; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; if (stripeSubscriptionId !== undefined) u.stripeSubscriptionId = stripeSubscriptionId; this._save(); return u; }
   async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
   async countSeats(ownerId) {
@@ -121,6 +126,7 @@ export class PgStore {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_hash text;
+      CREATE TABLE IF NOT EXISTS staged_imports (code text PRIMARY KEY, payload jsonb, created_at bigint);
     `);
   }
   async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,recovery_hash AS "recoveryHash",stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
@@ -168,6 +174,10 @@ export class PgStore {
     return this.getUserById(id);
   }
   async getUserByApiTokenHash(h) { if (!h) return null; const r = await this.pool.query('SELECT id,email,name,plan FROM users WHERE api_token_hash=$1', [h]); return r.rows[0] || null; }
+  async stageImport(code, rec) { await this.pool.query('INSERT INTO staged_imports(code,payload,created_at) VALUES($1,$2,$3)', [code, rec, rec.createdAt || Date.now()]); return code; }
+  async getStagedImport(code) { const r = await this.pool.query('SELECT payload FROM staged_imports WHERE code=$1', [code]); return r.rows[0] ? r.rows[0].payload : null; }
+  async deleteStagedImport(code) { await this.pool.query('DELETE FROM staged_imports WHERE code=$1', [code]); return true; }
+  async cleanupStaged(maxAgeMs) { const r = await this.pool.query('DELETE FROM staged_imports WHERE created_at < $1', [Date.now() - maxAgeMs]); return r.rowCount || 0; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) {
     if (plan != null) await this.pool.query('UPDATE users SET plan=$2 WHERE id=$1', [id, plan]);
     if (stripeCustomerId != null) await this.pool.query('UPDATE users SET stripe_customer_id=$2 WHERE id=$1', [id, stripeCustomerId]);

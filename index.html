@@ -3383,6 +3383,8 @@ const SYNC = {
   async resetPassword(email, recoveryCode, newPassword){ const d=await this.api('/api/reset-password',{method:'POST',body:JSON.stringify({email,recoveryCode,newPassword})}); this._auth(d); await this.enterWorkspace(); return d; },
   async regenRecovery(){ const d=await this.api('/api/account/recovery',{method:'POST',body:'{}'}); return d.recoveryCode; },
   async createApiToken(){ const d=await this.api('/api/account/api-token',{method:'POST',body:'{}'}); return d.token; },
+  async peekImport(code){ return this.api('/api/imports/'+encodeURIComponent(code)); },
+  async applyStagedImport(code, workspaceId, replace){ return this.api('/api/imports/'+encodeURIComponent(code)+'/apply',{method:'POST',body:JSON.stringify({workspaceId, replace})}); },
   async revokeApiToken(){ await this.api('/api/account/api-token/revoke',{method:'POST',body:'{}'}); },
   async updateName(name){ const d=await this.api('/api/account',{method:'PUT',body:JSON.stringify({name})}); this.name=d.name; localStorage.setItem('tf.name',d.name); },
   async changePassword(currentPassword,newPassword){ await this.api('/api/account/password',{method:'POST',body:JSON.stringify({currentPassword,newPassword})}); },
@@ -3528,7 +3530,7 @@ function openAuthModal(mode) {
     if(mode==='reset' && !($('#au-recovery')||{}).value?.trim()){ err.textContent='Enter your recovery code.'; return; }
     const btn=$('#au-go'); btn.disabled=true; btn.textContent='Working…'; err.textContent='';
     try {
-      if (mode==='login') await SYNC.login(email, pass);
+      if (mode==='login') { await SYNC.login(email, pass); if(/[?&]import=/.test(location.search)) setTimeout(handleImportParam, 400); }
       else if (mode==='signup') {
         const d = await SYNC.signup(email, pass, ($('#au-name')||{}).value?.trim()||'');
         closeModal(); render(); toast('👋 Welcome, '+(SYNC.name||SYNC.email)+'!');
@@ -3667,10 +3669,10 @@ function initSync() {
   if (SYNC.on && location.protocol.startsWith('http')) {
     SYNC.api('/api/health').then(async (h)=>{
       SYNC.ai = !!(h && h.ai);
-      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); }
+      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); handleImportParam(); }
       catch(e){ SYNC.status='off'; }
     }).catch(()=>{ SYNC.status='off'; });
-  } else { handleJoinParam(); }
+  } else { handleJoinParam(); handleImportParam(); }
   handleBillingParam();
   handlePricingPath();
 }
@@ -3678,6 +3680,36 @@ function handleJoinParam() {
   const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;
   if (!SYNC.on) { toast('Sign in to join this shared workspace'); if(!modalRoot.innerHTML) openAuthModal('login'); return; }
   SYNC.join(m[1]).then(w=>{ toast('🤝 Joined “'+w.name+'”'); history.replaceState(null,'',location.pathname); render(); }).catch(e=>toast('Join failed: '+e.message));
+}
+// One-click import links: /?import=CODE — a payload parked on the server via POST /api/imports/stage.
+// Nothing is applied until the signed-in user confirms here.
+async function handleImportParam() {
+  const m = location.search.match(/[?&]import=([a-f0-9]+)/i); if(!m) return;
+  const code = m[1];
+  if (!SYNC.on) { toast('Sign in to apply this import'); if(!modalRoot.innerHTML) openAuthModal('login'); return; }
+  let info; try { info = await SYNC.peekImport(code); } catch(e) { toast('Import link: '+e.message); history.replaceState(null,'',location.pathname); return; }
+  const c = info.counts||{}; const wss = info.workspaces||SYNC.workspaces||[];
+  const wsOpts = wss.map(w=>`<option value="${esc(w.id)}" ${w.id===SYNC.activeWs?'selected':''}>${esc(w.name)}</option>`).join('');
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal" style="max-width:460px">
+    <div class="modal-head"><div class="crumbs">📥 Import waiting</div></div>
+    <div class="modal-body">
+      <div style="font-weight:600;margin-bottom:6px">${esc(info.label||'Import')}</div>
+      <div class="sync-note" style="margin-bottom:12px">${c.projects||0} projects · ${c.tasks||0} tasks · ${c.subtasks||0} subtasks${c.labels?` · ${c.labels} labels`:''}</div>
+      <div class="field"><label>Into workspace</label><select id="imp-ws" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">${wsOpts}</select></div>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:10px;cursor:pointer"><input type="checkbox" id="imp-replace" ${info.replace?'checked':''}> <span><b>Replace all</b> — remove the workspace's current projects and tasks first (settings & filters are kept)</span></label>
+      <div id="imp-err" style="color:#ef4444;margin-top:8px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" id="imp-dismiss">Dismiss</button><span style="flex:1"></span><button class="btn primary" id="imp-go">Import now</button></div></div></div>`;
+  $('#imp-dismiss').onclick=()=>{ closeModal(); history.replaceState(null,'',location.pathname); };
+  $('#imp-go').onclick=async()=>{
+    const wsId=$('#imp-ws').value, replace=$('#imp-replace').checked; const btn=$('#imp-go'); btn.disabled=true; btn.textContent='Importing…';
+    try {
+      const r = await SYNC.applyStagedImport(code, wsId, replace);
+      closeModal(); history.replaceState(null,'',location.pathname);
+      if (wsId!==SYNC.activeWs) await SYNC.switchWorkspace(wsId); else await SYNC.pull();
+      render(); toast('✓ '+r.msg);
+    } catch(e) { btn.disabled=false; btn.textContent='Import now'; $('#imp-err').textContent=e.message; }
+  };
 }
 
 // ============================================================

@@ -94,6 +94,25 @@ The token works anywhere a session JWT does (`Authorization: Bearer tfk_…`), e
 
 The merge rules match the in-app importer: records with an `externalId` are updated in place on re-import, projects/sections/labels are created as needed.
 
+### One-click import links (no token needed)
+
+For hand-offs from a script or agent that has no credentials: park the payload, then send the link.
+
+```bash
+curl -s -X POST https://YOUR-APP.up.railway.app/api/imports/stage \
+  -H 'Content-Type: application/json' \
+  -d '{"label":"Asana open tasks","replace":true,"data":{...import JSON...}}'
+# → {"code":"…","url":"https://YOUR-APP.up.railway.app/?import=…","expiresAt":…}
+```
+
+Opening that URL while signed in shows an **Import waiting** dialog (workspace picker + Replace-all toggle). Nothing is applied until the user presses *Import now*; links are single-use and expire after 48 h. Staging is rate-limited (10 per IP per 15 min) and capped by `BODY_LIMIT`.
+
+| Method | Path | Auth | Body | Returns |
+|--------|------|------|------|---------|
+| POST | `/api/imports/stage` | no | `{data, replace?, label?}` | `{code,url,expiresAt,counts}` |
+| GET | `/api/imports/:code` | yes | — | `{label,replace,counts,workspaces}` |
+| POST | `/api/imports/:code/apply` | yes | `{workspaceId, replace?}` | `{ok,rev,msg,stats}` |
+
 ## Switching to Postgres (optional)
 1. In your Railway project: **New → Database → Add PostgreSQL**.
 2. Railway injects `DATABASE_URL` into your service automatically (same project). Redeploy.

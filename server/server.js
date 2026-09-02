@@ -131,7 +131,7 @@ app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.s
 
 app.use((req, _res, next) => { resolveAuth(req).then(u => { req.user = u; next(); }).catch(() => { req.user = null; next(); }); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, features: ['api-tokens', 'import'] }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, features: ['api-tokens', 'import', 'staged-imports'] }));
 
 // ---------- Personal API token (for scripts / agents importing on your behalf) ----------
 app.post('/api/account/api-token', asyncH(async (req, res) => {
@@ -297,6 +297,47 @@ app.post('/api/workspaces/:id/import', asyncH(async (req, res) => {
   console.log('[import]', u.email, '->', req.params.id, replace ? '(replace)' : '(merge)', r.msg);
   res.json({ ok: true, rev, msg: r.msg, stats: r.stats, counts: { projects: r.state.projects.length, sections: r.state.sections.length, tasks: r.state.tasks.filter(t => !t.parentId).length, subtasks: r.state.tasks.filter(t => t.parentId).length, open: r.state.tasks.filter(t => !t.completed).length } });
 }));
+
+// ---------- Staged imports (one-click links) ----------
+// Anyone can *park* a payload here (rate-limited, expires in 48h); it only lands in a workspace once a
+// signed-in member opens https://<app>/?import=CODE and confirms. Nothing is applied without that click.
+const STAGE_TTL = 48 * 60 * 60 * 1000;
+const importCounts = (data) => { const tasks = Array.isArray(data.tasks) ? data.tasks : []; return { projects: (data.projects || []).length, tasks: tasks.length, subtasks: tasks.reduce((a, t) => a + ((t && t.subtasks) || []).length, 0), labels: (data.labels || []).length }; };
+app.post('/api/imports/stage', rateLimit(10, 15 * 60 * 1000), asyncH(async (req, res) => {
+  const body = req.body || {};
+  const data = (body.data && typeof body.data === 'object') ? body.data : null;
+  if (!data || !Array.isArray(data.tasks)) return res.status(400).json({ error: 'Body must be { data: { tasks: [...] }, replace?, label? }' });
+  const code = crypto.randomBytes(8).toString('hex');
+  const rec = { data, replace: !!body.replace, label: String(body.label || 'Import').slice(0, 80), createdAt: Date.now(), counts: importCounts(data) };
+  await store.stageImport(code, rec);
+  const origin = req.headers.origin || ('https://' + req.headers.host);
+  console.log('[import] staged', code, rec.label, JSON.stringify(rec.counts), rec.replace ? '(replace)' : '(merge)');
+  res.json({ code, url: origin + '/?import=' + code, expiresAt: rec.createdAt + STAGE_TTL, counts: rec.counts });
+}));
+app.get('/api/imports/:code', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const rec = await store.getStagedImport(String(req.params.code || ''));
+  if (!rec || Date.now() - (rec.createdAt || 0) > STAGE_TTL) return res.status(404).json({ error: 'That import link has expired or was already used' });
+  res.json({ label: rec.label, replace: !!rec.replace, counts: rec.counts, createdAt: rec.createdAt, workspaces: await store.listWorkspaces(u.uid) });
+}));
+app.post('/api/imports/:code/apply', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  const code = String(req.params.code || '');
+  const rec = await store.getStagedImport(code);
+  if (!rec || Date.now() - (rec.createdAt || 0) > STAGE_TTL) return res.status(404).json({ error: 'That import link has expired or was already used' });
+  const wsId = String(req.body.workspaceId || '');
+  if (!(await store.role(u.uid, wsId))) return res.status(403).json({ error: 'Not a member of that workspace' });
+  const replace = req.body.replace === undefined ? !!rec.replace : !!req.body.replace;
+  const cur = await store.getState(wsId);
+  const r = applyImport(cur ? cur.state : null, rec.data, { replace });
+  if (!r.ok) return res.status(400).json({ error: r.msg });
+  const rev = await store.putState(wsId, r.state);
+  await store.deleteStagedImport(code);
+  broadcast(wsId, null, rev);
+  console.log('[import] applied', code, 'by', u.email, '->', wsId, replace ? '(replace)' : '(merge)', r.msg);
+  res.json({ ok: true, rev, msg: r.msg, stats: r.stats });
+}));
+setInterval(() => { store.cleanupStaged(STAGE_TTL).catch(() => {}); }, 60 * 60 * 1000).unref();
 
 app.post('/api/workspaces/:id/invite', asyncH(async (req, res) => {
   const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
