@@ -70,6 +70,30 @@ The **Braindump** feature lets you ramble (voice or text) and turns it into cate
 
 Endpoint: `POST /api/braindump` (auth required) → `{tasks:[…]}`. Until the key is set it returns `501` and the app silently falls back to the local organizer. This is **separate from your Claude.ai subscription** — it's the pay-as-you-go API (a braindump costs a fraction of a cent).
 
+## 🔌 API tokens & server-side import
+
+Scripts and AI agents can import tasks straight into a cloud workspace without a browser session.
+
+1. In the app: **⚙ Settings → ☁ Cloud sync → 🔌 API token**. The token (`tfk_…`) is shown once; only its SHA-256 hash is stored. Minting a new one or pressing **Revoke** invalidates the old one.
+2. Save it on your machine, outside any repo: `~/.taskflow/token` (first line), or export `TASKFLOW_TOKEN`.
+3. Import any TaskFlow JSON (the same shape the Import / Export panel accepts, see README):
+   ```bash
+   node scripts/taskflow-import.mjs my-tasks.json            # merge into your first owned workspace
+   node scripts/taskflow-import.mjs my-tasks.json --replace  # wipe tasks/projects first, keep settings & filters
+   node scripts/taskflow-import.mjs my-tasks.json --workspace "My Workspace" --dry-run
+   ```
+   Open browser tabs on that workspace are nudged over the WebSocket and refresh themselves.
+
+The token works anywhere a session JWT does (`Authorization: Bearer tfk_…`), except it cannot mint another token. The raw endpoint:
+
+| Method | Path | Body | Returns |
+|--------|------|------|---------|
+| POST | `/api/workspaces/:id/import` | `{data:{projects,labels,tasks}, replace?:bool}` (or the import JSON itself) | `{ok,rev,msg,stats,counts}` |
+| POST | `/api/account/api-token` | — (session auth only) | `{token}` |
+| POST | `/api/account/api-token/revoke` | — | `{ok}` |
+
+The merge rules match the in-app importer: records with an `externalId` are updated in place on re-import, projects/sections/labels are created as needed.
+
 ## Switching to Postgres (optional)
 1. In your Railway project: **New → Database → Add PostgreSQL**.
 2. Railway injects `DATABASE_URL` into your service automatically (same project). Redeploy.

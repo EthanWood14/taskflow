@@ -66,7 +66,8 @@ export class JsonStore {
   }
   async removeMember(wsId, userId) { const w = this.db.workspaces[wsId]; if (!w) return false; if (w.members[userId] === 'owner') return false; delete w.members[userId]; this._save(); return true; }
   async deleteWorkspace(wsId) { delete this.db.workspaces[wsId]; for (const c of Object.keys(this.db.invites)) if (this.db.invites[c].wsId === wsId) delete this.db.invites[c]; this._save(); return true; }
-  async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; if (fields.recoveryHash) u.recoveryHash = fields.recoveryHash; this._save(); return u; }
+  async updateUser(id, fields) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (fields.name != null) u.name = String(fields.name).slice(0, 60); if (fields.hash) u.hash = fields.hash; if (fields.recoveryHash) u.recoveryHash = fields.recoveryHash; if (fields.apiTokenHash !== undefined) u.apiTokenHash = fields.apiTokenHash; this._save(); return u; }
+  async getUserByApiTokenHash(h) { if (!h) return null; return Object.values(this.db.users).find(x => x.apiTokenHash && x.apiTokenHash === h) || null; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; if (stripeSubscriptionId !== undefined) u.stripeSubscriptionId = stripeSubscriptionId; this._save(); return u; }
   async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
   async countSeats(ownerId) {
@@ -119,6 +120,7 @@ export class PgStore {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_hash text;
     `);
   }
   async getUserByEmail(email) { const r = await this.pool.query('SELECT id,email,hash,name,plan,recovery_hash AS "recoveryHash",stripe_customer_id AS "stripeCustomerId",stripe_subscription_id AS "stripeSubscriptionId" FROM users WHERE email=$1', [email]); return r.rows[0] || null; }
@@ -162,8 +164,10 @@ export class PgStore {
     if (fields.name != null) await this.pool.query('UPDATE users SET name=$2 WHERE id=$1', [id, String(fields.name).slice(0, 60)]);
     if (fields.hash) await this.pool.query('UPDATE users SET hash=$2 WHERE id=$1', [id, fields.hash]);
     if (fields.recoveryHash) await this.pool.query('UPDATE users SET recovery_hash=$2 WHERE id=$1', [id, fields.recoveryHash]);
+    if (fields.apiTokenHash !== undefined) await this.pool.query('UPDATE users SET api_token_hash=$2 WHERE id=$1', [id, fields.apiTokenHash]);
     return this.getUserById(id);
   }
+  async getUserByApiTokenHash(h) { if (!h) return null; const r = await this.pool.query('SELECT id,email,name,plan FROM users WHERE api_token_hash=$1', [h]); return r.rows[0] || null; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) {
     if (plan != null) await this.pool.query('UPDATE users SET plan=$2 WHERE id=$1', [id, plan]);
     if (stripeCustomerId != null) await this.pool.query('UPDATE users SET stripe_customer_id=$2 WHERE id=$1', [id, stripeCustomerId]);

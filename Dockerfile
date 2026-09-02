@@ -7,7 +7,7 @@ COPY server/package.json ./
 RUN npm install --omit=dev
 
 # Server code
-COPY server/server.js server/storage.js ./
+COPY server/server.js server/storage.js server/importer.js ./
 
 # Static app, served from /app/public
 COPY index.html manifest.webmanifest sw.js ./public/
