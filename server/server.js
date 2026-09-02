@@ -16,8 +16,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const PUBLIC_DIR = process.env.PUBLIC_DIR || path.join(__dirname, 'public');
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
-if (!process.env.JWT_SECRET) console.warn('[taskflow] JWT_SECRET not set — using a random secret (sessions reset on restart). Set JWT_SECRET in Railway.');
+// Session signing key. Prefer the env var; otherwise keep a generated one next to the data so
+// restarts don't sign everyone out (only works if DATA_DIR is a real mount — see /api/health).
+function resolveJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  const f = path.join(DATA_DIR, '.jwt-secret');
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (fs.existsSync(f)) { const s = fs.readFileSync(f, 'utf8').trim(); if (s.length >= 32) { console.warn('[taskflow] JWT_SECRET not set — reusing the key stored in DATA_DIR.'); return s; } }
+    const s = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(f, s, { mode: 0o600 });
+    console.warn('[taskflow] JWT_SECRET not set — generated one and stored it in DATA_DIR. Set JWT_SECRET in Railway to be safe.');
+    return s;
+  } catch (e) {
+    console.warn('[taskflow] JWT_SECRET not set and DATA_DIR is not writable — using a throwaway secret; everyone is signed out on each restart.');
+    return crypto.randomBytes(32).toString('hex');
+  }
+}
+const JWT_SECRET = resolveJwtSecret();
 
 const store = makeStore(DATA_DIR);
 const MODE = process.env.DATABASE_URL ? 'pg' : 'json';

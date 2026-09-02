@@ -3691,8 +3691,15 @@ async function initSync() {
     let site=null; try { site = await SYNC.api('/api/site'); } catch(e) {}
     if (site && site.mode==='password') {
       SYNC.site=true; SYNC.siteConfigured=!!site.configured;
-      if (!(SYNC.on && SYNC.email===SITE_EMAIL)) {
-        if (SYNC.on) { SYNC.site=false; SYNC.logout(); SYNC.site=true; }   // stale accounts-mode session: drop it, no lock loop
+      const dropSession=()=>{ SYNC.site=false; SYNC.logout(); SYNC.site=true; };   // logout() re-opens the lock; suppress it so we control the mode
+      if (SYNC.on && SYNC.email===SITE_EMAIL) {
+        // A stored token can be dead — the server rejects it after a restart when JWT_SECRET isn't
+        // set, or after a data reset. Verify before trusting it, else the user is stranded on local
+        // sample data with no way back to the password screen.
+        try { await SYNC.api('/api/me'); }
+        catch(e) { dropSession(); showSiteLock(!site.configured); return; }
+      } else {
+        if (SYNC.on) dropSession();   // stale accounts-mode session
         showSiteLock(!site.configured); return;
       }
     }
