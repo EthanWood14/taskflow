@@ -153,9 +153,13 @@ app.use((req, _res, next) => { resolveAuth(req).then(u => { req.user = u; next()
 function dataDirIsMount() {
   try { if (MODE === 'pg') return true; const mounts = fs.readFileSync('/proc/mounts', 'utf8'); return mounts.split('\n').some(l => l.split(' ')[1] === DATA_DIR); } catch (e) { return null; }
 }
+// How many tasks the bundled first-run seed holds (null when the image has no seed file).
+function seedTaskCount() {
+  try { const d = JSON.parse(fs.readFileSync(path.join(__dirname, 'seed-import.json'), 'utf8')); return Array.isArray(d.tasks) ? d.tasks.length : null; } catch (e) { return null; }
+}
 app.get('/api/health', asyncH(async (_req, res) => {
   let staged = 0; try { staged = (await store.listStagedImports()).length; } catch (e) {}
-  res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, site: SITE_MODE, persistent: dataDirIsMount(), dataDir: DATA_DIR, stagedImports: staged, features: ['api-tokens', 'import', 'staged-imports', 'password-mode'] });
+  res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, site: SITE_MODE, persistent: dataDirIsMount(), dataDir: DATA_DIR, stagedImports: staged, seedTasks: seedTaskCount(), features: ['api-tokens', 'import', 'staged-imports', 'password-mode'] });
 }));
 
 // ---------- Single-password mode (default) ----------
