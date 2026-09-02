@@ -9,6 +9,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { makeStore } from './storage.js';
+import { applyImport } from './importer.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8080;
@@ -69,10 +70,35 @@ async function planOf(uid) { const u = await store.getUserById(uid); return (u &
 const norm = (e) => String(e || '').trim().toLowerCase();
 const validEmail = (e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e);
 const sign = (u) => jwt.sign({ uid: u.id, email: u.email }, JWT_SECRET, { expiresIn: '180d' });
-function auth(req) { const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i); if (!m) return null; try { return jwt.verify(m[1], JWT_SECRET); } catch (e) { return null; } }
+// Two credential kinds on the Authorization header:
+//   Bearer <jwt>        — browser sessions (login/signup)
+//   Bearer tfk_<hex>    — personal API token minted in Settings → ☁ Cloud sync → 🔌 API token (only its SHA-256 is stored)
+const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+async function resolveAuth(req) {
+  const m = (req.headers.authorization || '').match(/^Bearer\s+(.+)$/i); if (!m) return null;
+  const cred = m[1].trim();
+  if (cred.startsWith('tfk_')) { const u = await store.getUserByApiTokenHash(hashToken(cred)); return u ? { uid: u.id, email: u.email, viaToken: true } : null; }
+  try { return jwt.verify(cred, JWT_SECRET); } catch (e) { return null; }
+}
+function auth(req) { return req.user || null; }
 function asyncH(fn) { return (req, res) => Promise.resolve(fn(req, res)).catch(e => { console.error(e); res.status(500).json({ error: 'Server error' }); }); }
 
 const app = express();
+app.set('trust proxy', 1); // Railway sits behind a proxy; needed so req.ip is the real client address
+
+// Brute-force guard for credential endpoints: N attempts per client IP per window.
+// In-memory and per-process, which is fine for a single Railway instance.
+const RL = new Map(); // key -> [timestamps]
+function rateLimit(max, windowMs) {
+  return (req, res, next) => {
+    const now = Date.now(), key = req.ip + ' ' + req.path;
+    const hits = (RL.get(key) || []).filter(t => now - t < windowMs);
+    if (hits.length >= max) return res.status(429).json({ error: 'Too many attempts — please wait a few minutes and try again' });
+    hits.push(now); RL.set(key, hits); next();
+  };
+}
+setInterval(() => { const now = Date.now(); for (const [k, v] of RL) if (!v.some(t => now - t < 15 * 60 * 1000)) RL.delete(k); }, 5 * 60 * 1000).unref();
+const authLimit = rateLimit(30, 15 * 60 * 1000);
 
 // Stripe webhook needs the RAW body for signature verification — mount before express.json().
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyncH(async (req, res) => {
@@ -93,12 +119,35 @@ app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), asyn
   res.json({ received: true });
 }));
 
-app.use(express.json({ limit: '8mb' }));
+// Each workspace syncs as ONE JSON document, so this caps total workspace size. Keep it generous.
+const BODY_LIMIT = process.env.BODY_LIMIT || '32mb';
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use((err, _req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: `Workspace is too large to sync (over ${BODY_LIMIT}). Export a backup, then delete or archive old completed tasks.` });
+  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Malformed JSON' });
+  next(err);
+});
 app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type'); res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS'); if (req.method === 'OPTIONS') return res.sendStatus(204); next(); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY }));
+app.use((req, _res, next) => { resolveAuth(req).then(u => { req.user = u; next(); }).catch(() => { req.user = null; next(); }); });
 
-app.post('/api/signup', asyncH(async (req, res) => {
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, features: ['api-tokens', 'import'] }));
+
+// ---------- Personal API token (for scripts / agents importing on your behalf) ----------
+app.post('/api/account/api-token', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (u.viaToken) return res.status(403).json({ error: 'Sign in with your password to mint a new API token' });
+  const token = 'tfk_' + crypto.randomBytes(24).toString('hex');
+  await store.updateUser(u.uid, { apiTokenHash: hashToken(token) });
+  res.json({ token }); // shown once; only the hash is stored
+}));
+app.post('/api/account/api-token/revoke', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  await store.updateUser(u.uid, { apiTokenHash: null });
+  res.json({ ok: true });
+}));
+
+app.post('/api/signup', authLimit, asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || ''), name = String(req.body.name || '').trim().slice(0, 60);
   if (!validEmail(email)) return res.status(400).json({ error: 'Invalid email' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
@@ -110,7 +159,7 @@ app.post('/api/signup', asyncH(async (req, res) => {
 }));
 
 // Self-service password reset using the recovery code (no email provider needed).
-app.post('/api/reset-password', asyncH(async (req, res) => {
+app.post('/api/reset-password', authLimit, asyncH(async (req, res) => {
   const email = norm(req.body.email), code = String(req.body.recoveryCode || '').trim(), next = String(req.body.newPassword || '');
   const user = await store.getUserByEmail(email);
   if (!user || !user.recoveryHash || !(await bcrypt.compare(code, user.recoveryHash))) return res.status(401).json({ error: 'Email or recovery code is wrong' });
@@ -127,7 +176,7 @@ app.post('/api/account/recovery', asyncH(async (req, res) => {
   res.json({ recoveryCode });
 }));
 
-app.post('/api/login', asyncH(async (req, res) => {
+app.post('/api/login', authLimit, asyncH(async (req, res) => {
   const email = norm(req.body.email), password = String(req.body.password || '');
   const user = await store.getUserByEmail(email);
   if (!user || !(await bcrypt.compare(password, user.hash))) return res.status(401).json({ error: 'Wrong email or password' });
@@ -229,6 +278,24 @@ app.put('/api/workspaces/:id/state', asyncH(async (req, res) => {
   const rev = await store.putState(req.params.id, req.body.state);
   broadcast(req.params.id, req.body.clientId, rev);
   res.json({ ok: true, rev });
+}));
+
+// Server-side import: same JSON the in-app Import / Export panel accepts (see README "Import JSON shape").
+// Body: { data: {projects,labels,tasks}, replace?: boolean }  — or the import JSON itself with an optional top-level "replace".
+// Merges into the workspace state, bumps rev, and nudges every connected client to pull.
+app.post('/api/workspaces/:id/import', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (!(await store.role(u.uid, req.params.id))) return res.status(403).json({ error: 'Not a member' });
+  const body = req.body || {};
+  const data = (body.data && typeof body.data === 'object') ? body.data : body;
+  const replace = !!body.replace;
+  const rec = await store.getState(req.params.id);
+  const r = applyImport(rec ? rec.state : null, data, { replace });
+  if (!r.ok) return res.status(400).json({ error: r.msg });
+  const rev = await store.putState(req.params.id, r.state);
+  broadcast(req.params.id, null, rev);
+  console.log('[import]', u.email, '->', req.params.id, replace ? '(replace)' : '(merge)', r.msg);
+  res.json({ ok: true, rev, msg: r.msg, stats: r.stats, counts: { projects: r.state.projects.length, sections: r.state.sections.length, tasks: r.state.tasks.filter(t => !t.parentId).length, subtasks: r.state.tasks.filter(t => t.parentId).length, open: r.state.tasks.filter(t => !t.completed).length } });
 }));
 
 app.post('/api/workspaces/:id/invite', asyncH(async (req, res) => {

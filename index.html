@@ -3382,6 +3382,8 @@ const SYNC = {
   async refreshWorkspaces(){ try { const d=await this.api('/api/me'); this.workspaces=d.workspaces||[]; if(d.name){ this.name=d.name; localStorage.setItem('tf.name',d.name); } } catch(e){} },
   async resetPassword(email, recoveryCode, newPassword){ const d=await this.api('/api/reset-password',{method:'POST',body:JSON.stringify({email,recoveryCode,newPassword})}); this._auth(d); await this.enterWorkspace(); return d; },
   async regenRecovery(){ const d=await this.api('/api/account/recovery',{method:'POST',body:'{}'}); return d.recoveryCode; },
+  async createApiToken(){ const d=await this.api('/api/account/api-token',{method:'POST',body:'{}'}); return d.token; },
+  async revokeApiToken(){ await this.api('/api/account/api-token/revoke',{method:'POST',body:'{}'}); },
   async updateName(name){ const d=await this.api('/api/account',{method:'PUT',body:JSON.stringify({name})}); this.name=d.name; localStorage.setItem('tf.name',d.name); },
   async changePassword(currentPassword,newPassword){ await this.api('/api/account/password',{method:'POST',body:JSON.stringify({currentPassword,newPassword})}); },
   async deleteAccount(password){ await this.api('/api/account/delete',{method:'POST',body:JSON.stringify({password})}); this.logout(); },
@@ -3402,7 +3404,7 @@ const SYNC = {
   async leave() { const a=this.active; if(!a) return; await this.api('/api/workspaces/'+a.id+'/leave',{method:'POST',body:'{}'}); await this.refreshWorkspaces(); this.activeWs=(this.workspaces[0]||{}).id||null; if(this.activeWs){ localStorage.setItem('tf.ws',this.activeWs); await this.enterWorkspace(); } else this.logout(); },
   async deleteWorkspace() { const a=this.active; if(!a) return; await this.api('/api/workspaces/'+a.id+'/delete',{method:'POST',body:'{}'}); await this.refreshWorkspaces(); this.activeWs=(this.workspaces[0]||{}).id||null; if(this.activeWs){ localStorage.setItem('tf.ws',this.activeWs); await this.enterWorkspace(); } else this.logout(); },
   schedulePush() { if (!this.on || this._suppress) return; clearTimeout(this._pushTimer); this._pushTimer = setTimeout(()=>this.push(), 800); },
-  async push() { const a=this.active; if(!a) return; try { await this.api('/api/workspaces/'+a.id+'/state',{method:'PUT',body:JSON.stringify({state, clientId:this.clientId})}); this.status='on'; } catch(e){ this.status='error'; } },
+  async push() { const a=this.active; if(!a) return; try { await this.api('/api/workspaces/'+a.id+'/state',{method:'PUT',body:JSON.stringify({state, clientId:this.clientId})}); this.status='on'; } catch(e){ const was=this.status; this.status='error'; if(was!=='error') toast(e.status===413 ? 'Sync failed: '+e.message : 'Sync failed — your changes are saved on this device and will retry on the next edit'); } },
   async pull() { const a=this.active; if(!a) return; try { const d=await this.api('/api/workspaces/'+a.id+'/state'); if(d&&d.state){ this._suppress=true; state=migrate(d.state); _origPersist(); this._suppress=false; render(); } } catch(e){} },
   connectWS() {
     const a=this.active; if (!this.on || !a || !('WebSocket' in window)) return;
@@ -3445,6 +3447,7 @@ function syncBoxHtml() {
         <button class="btn ghost" id="acct-name">✎ Name</button>
         <button class="btn ghost" id="acct-pass">🔑 Password</button>
         <button class="btn ghost" id="acct-recovery" title="View a new recovery code">🛟 Recovery code</button>
+        <button class="btn ghost" id="acct-token" title="Mint a personal API token for scripts and AI agents">🔌 API token</button>
         <button class="btn ghost" id="sync-logout">Log out</button></div>
       <div class="field" style="margin:10px 0 6px"><label>Active workspace</label>
         <div style="display:flex;gap:6px"><select id="sync-ws" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">${wsOpts}</select>
@@ -3481,6 +3484,7 @@ function wireSyncBox() {
   const an=$('#acct-name'); if(an) an.onclick=async()=>{ const n=prompt('Your display name', SYNC.name||''); if(n&&n.trim()){ try{ await SYNC.updateName(n.trim()); refresh(); render(); toast('✓ Name updated'); }catch(e){ toast('Failed: '+e.message); } } };
   const ap=$('#acct-pass'); if(ap) ap.onclick=async()=>{ const cur=prompt('Current password'); if(cur==null)return; const nw=prompt('New password (6+ chars)'); if(!nw)return; try{ await SYNC.changePassword(cur,nw); toast('🔑 Password changed'); }catch(e){ toast('Failed: '+e.message); } };
   const ar=$('#acct-recovery'); if(ar) ar.onclick=async()=>{ if(!confirm('Generate a new recovery code? Your old one stops working.'))return; try{ const code=await SYNC.regenRecovery(); showRecoveryCode(code,false); }catch(e){ toast('Failed: '+e.message); } };
+  const at=$('#acct-token'); if(at) at.onclick=async()=>{ if(!confirm('Mint a new API token? Any previous token stops working. It lets scripts import tasks into your workspaces on your behalf.'))return; try{ const tok=await SYNC.createApiToken(); showApiToken(tok); }catch(e){ toast('Failed: '+e.message); } };
   const ad=$('#acct-delete'); if(ad) ad.onclick=async()=>{ if(!confirm('Permanently delete your account and any workspaces you own? This cannot be undone.'))return; const pw=prompt('Confirm your password to delete'); if(!pw)return; try{ await SYNC.deleteAccount(pw); refresh(); render(); toast('Account deleted'); }catch(e){ toast('Failed: '+e.message); } };
   // workspace controls
   const sel=$('#sync-ws'); if(sel) sel.onchange=async()=>{ await SYNC.switchWorkspace(sel.value); refresh(); render(); };
@@ -3555,6 +3559,23 @@ function showRecoveryCode(code, fromSignup) {
     </div>
     <div class="modal-foot"><span style="flex:1"></span><button class="btn primary" data-act="close-modal">I saved it</button></div></div></div>`;
   $('#rk-copy').onclick=()=>copyText(code);
+}
+function showApiToken(token) {
+  modalRoot.innerHTML = `<div class="overlay"><div class="modal" style="max-width:520px">
+    <div class="modal-head"><div class="crumbs">🔌 Your API token</div></div>
+    <div class="modal-body">
+      <div class="sync-note" style="margin-bottom:12px">Use this to let scripts or AI agents import tasks into your workspaces. It is shown <b>once</b> — only a hash is kept on the server. Treat it like a password; mint a new one here to revoke it.</div>
+      <div class="rk-code" id="tk-code" style="font-size:12px;word-break:break-all">${esc(token)}</div>
+      <button class="btn ghost" id="tk-copy" style="margin-top:10px">📋 Copy token</button>
+      <div class="sync-note" style="margin-top:14px;text-align:left"><b>Use it</b> — save it on your computer (never in the repo):<br>
+        <code>mkdir ~/.taskflow &amp;&amp; echo tfk_… &gt; ~/.taskflow/token</code><br>
+        then import any TaskFlow JSON with<br>
+        <code>node scripts/taskflow-import.mjs my-tasks.json --replace</code><br>
+        or call <code>POST /api/workspaces/&lt;id&gt;/import</code> with <code>Authorization: Bearer tfk_…</code>.</div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" id="tk-revoke">Revoke</button><span style="flex:1"></span><button class="btn primary" data-act="close-modal">I saved it</button></div></div></div>`;
+  $('#tk-copy').onclick=()=>copyText(token);
+  $('#tk-revoke').onclick=async()=>{ try{ await SYNC.revokeApiToken(); toast('API token revoked'); closeModal(); }catch(e){ toast('Failed: '+e.message); } };
 }
 function accountMenu(x, y) {
   const pro = SYNC.billing.plan==='pro';
