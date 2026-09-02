@@ -2408,7 +2408,7 @@ function wireSidebar() {
     else if(a==='open-gantt') goRoadmap('gantt');
     else if(a==='share-project') openShareProject(id);
     else if(a==='braindump'){ ui.drawerOpen=false; openBraindump(); }
-    else if(a==='open-auth'){ ui.drawerOpen=false; if(SYNC.site) showLockScreen(!SYNC.siteConfigured); else openAuthModal('login'); }
+    else if(a==='open-auth'){ ui.drawerOpen=false; if(SYNC.site) showSiteLock(!SYNC.siteConfigured); else openAuthModal('login'); }
     else if(a==='account-menu'){ accountMenu(e.clientX, e.clientY); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
@@ -2465,7 +2465,7 @@ function wireMain() {
     else if(a==='bulk-add') openBulkAdd();
     else if(a==='weekly-review') openWeeklyReview();
     else if(a==='open-templates') openTemplatePicker();
-    else if(a==='open-auth'){ if(SYNC.site) showLockScreen(!SYNC.siteConfigured); else openAuthModal('login'); }
+    else if(a==='open-auth'){ if(SYNC.site) showSiteLock(!SYNC.siteConfigured); else openAuthModal('login'); }
     else if(a==='account-menu') accountMenu(e.clientX, e.clientY);
     else if(a==='dismiss-welcome'){ localStorage.setItem('tf.welcomeDismissed','1'); render(); }
   });
@@ -3378,7 +3378,7 @@ const SYNC = {
   async refreshBilling(){ if(!location.protocol.startsWith('http'))return; try { const d=await this.api('/api/billing/config'); this.billing=Object.assign(this.billing,d); } catch(e){} },
   async upgrade(){ const d=await this.api('/api/billing/checkout',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
   async portal(){ const d=await this.api('/api/billing/portal',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
-  logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); if(this.site) showLockScreen(false); },
+  logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); if(this.site) showSiteLock(false); },
   // Single-password mode (server default): one password, one workspace, no emails.
   site:false, siteConfigured:false,
   get isSite(){ return !!this.site; },
@@ -3692,7 +3692,7 @@ async function initSync() {
       SYNC.site=true; SYNC.siteConfigured=!!site.configured;
       if (!(SYNC.on && SYNC.email===SITE_EMAIL)) {
         if (SYNC.on) { SYNC.site=false; SYNC.logout(); SYNC.site=true; }   // stale accounts-mode session: drop it, no lock loop
-        showLockScreen(!site.configured); return;
+        showSiteLock(!site.configured); return;
       }
     }
   }
@@ -3708,9 +3708,9 @@ async function initSync() {
   handlePricingPath();
 }
 // ---- Lock screen (password mode) ----
-function showLockScreen(setupMode) {
-  let el = document.getElementById('lock-screen');
-  if (!el) { el = document.createElement('div'); el.id='lock-screen'; document.body.appendChild(el); }
+function showSiteLock(setupMode) {
+  let el = document.getElementById('site-lock');
+  if (!el) { el = document.createElement('div'); el.id='site-lock'; document.body.appendChild(el); }
   el.setAttribute('style','position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px');
   el.innerHTML = `<form id="lock-form" class="modal" style="max-width:380px;width:100%;padding:28px 26px;text-align:center">
       <div style="font-size:40px;margin-bottom:6px">${setupMode?'🔐':'🔒'}</div>
@@ -3728,10 +3728,10 @@ function showLockScreen(setupMode) {
     if (pw.length < 6) { err.textContent='At least 6 characters'; return; }
     btn.disabled=true; btn.textContent='Opening…'; err.textContent='';
     try { const d = setupMode ? await SYNC.setupSite(pw) : await SYNC.unlock(pw); await afterUnlock(d); }
-    catch(e) { btn.disabled=false; btn.textContent=setupMode?'Set password & open':'Unlock'; err.textContent=e.message; if(e.status===409 && /Already set up/.test(e.message)) showLockScreen(false); else if(e.status===409 && /Not set up/.test(e.message)) showLockScreen(true); }
+    catch(e) { btn.disabled=false; btn.textContent=setupMode?'Set password & open':'Unlock'; err.textContent=e.message; if(e.status===409 && /Already set up/.test(e.message)) showSiteLock(false); else if(e.status===409 && /Not set up/.test(e.message)) showSiteLock(true); }
   };
 }
-function hideLockScreen(){ const el=document.getElementById('lock-screen'); if(el) el.remove(); }
+function hideSiteLock(){ const el=document.getElementById('site-lock'); if(el) el.remove(); }
 async function afterUnlock(d) {
   SYNC._auth(d); SYNC.siteConfigured=true;
   try { const h=await SYNC.api('/api/health'); SYNC.ai=!!(h&&h.ai); } catch(e){}
