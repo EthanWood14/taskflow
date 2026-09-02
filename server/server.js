@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { makeStore } from './storage.js';
@@ -131,7 +132,15 @@ app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.s
 
 app.use((req, _res, next) => { resolveAuth(req).then(u => { req.user = u; next(); }).catch(() => { req.user = null; next(); }); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, site: SITE_MODE, features: ['api-tokens', 'import', 'staged-imports', 'password-mode'] }));
+// `persistent` tells you whether DATA_DIR is a real mount (Railway Volume). If false and mode=json,
+// every redeploy wipes accounts, tasks and staged imports.
+function dataDirIsMount() {
+  try { if (MODE === 'pg') return true; const mounts = fs.readFileSync('/proc/mounts', 'utf8'); return mounts.split('\n').some(l => l.split(' ')[1] === DATA_DIR); } catch (e) { return null; }
+}
+app.get('/api/health', asyncH(async (_req, res) => {
+  let staged = 0; try { staged = (await store.listStagedImports()).length; } catch (e) {}
+  res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, site: SITE_MODE, persistent: dataDirIsMount(), dataDir: DATA_DIR, stagedImports: staged, features: ['api-tokens', 'import', 'staged-imports', 'password-mode'] });
+}));
 
 // ---------- Single-password mode (default) ----------
 // One password protects the whole app; no emails or usernames. Under the hood it is a single synthetic
