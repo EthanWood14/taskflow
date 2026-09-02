@@ -3736,7 +3736,7 @@ async function afterUnlock(d) {
   SYNC._auth(d); SYNC.siteConfigured=true;
   try { const h=await SYNC.api('/api/health'); SYNC.ai=!!(h&&h.ai); } catch(e){}
   try { await SYNC.refreshWorkspaces(); SYNC.status='on'; await SYNC.enterWorkspace(); } catch(e){ SYNC.status='error'; }
-  hideLockScreen(); render();
+  hideSiteLock(); render();
   handleJoinParam(); handleImportParam(); checkPendingImports();
 }
 // Password mode: anything parked via /api/imports/stage is offered right after unlock — one click to apply.
