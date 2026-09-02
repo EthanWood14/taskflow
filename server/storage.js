@@ -73,6 +73,8 @@ export class JsonStore {
   async getStagedImport(code) { return (this.db.staged || {})[code] || null; }
   async deleteStagedImport(code) { if (this.db.staged && this.db.staged[code]) { delete this.db.staged[code]; this._save(); } return true; }
   async cleanupStaged(maxAgeMs) { const now = Date.now(); let n = 0; for (const [c, r] of Object.entries(this.db.staged || {})) if (!r || now - (r.createdAt || 0) > maxAgeMs) { delete this.db.staged[c]; n++; } if (n) this._save(); return n; }
+  async listStagedImports() { return Object.entries(this.db.staged || {}).map(([code, r]) => ({ code, label: r.label, counts: r.counts, replace: !!r.replace, createdAt: r.createdAt })); }
+  async listAllWorkspaces() { return Object.values(this.db.workspaces).map(w => ({ id: w.id, ownerId: w.ownerId, name: w.name, state: w.state, rev: w.rev, updatedAt: w.updatedAt })); }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) { const u = Object.values(this.db.users).find(x => x.id === id); if (!u) return null; if (plan != null) u.plan = plan; if (stripeCustomerId != null) u.stripeCustomerId = stripeCustomerId; if (stripeSubscriptionId !== undefined) u.stripeSubscriptionId = stripeSubscriptionId; this._save(); return u; }
   async getUserByStripeCustomer(cid) { return Object.values(this.db.users).find(x => x.stripeCustomerId === cid) || null; }
   async countSeats(ownerId) {
@@ -178,6 +180,8 @@ export class PgStore {
   async getStagedImport(code) { const r = await this.pool.query('SELECT payload FROM staged_imports WHERE code=$1', [code]); return r.rows[0] ? r.rows[0].payload : null; }
   async deleteStagedImport(code) { await this.pool.query('DELETE FROM staged_imports WHERE code=$1', [code]); return true; }
   async cleanupStaged(maxAgeMs) { const r = await this.pool.query('DELETE FROM staged_imports WHERE created_at < $1', [Date.now() - maxAgeMs]); return r.rowCount || 0; }
+  async listStagedImports() { const r = await this.pool.query('SELECT code, payload FROM staged_imports ORDER BY created_at DESC'); return r.rows.map(x => ({ code: x.code, label: x.payload.label, counts: x.payload.counts, replace: !!x.payload.replace, createdAt: x.payload.createdAt })); }
+  async listAllWorkspaces() { const r = await this.pool.query('SELECT id, owner_id AS "ownerId", name, state, rev, updated_at AS "updatedAt" FROM workspaces'); return r.rows; }
   async setBilling(id, { plan, stripeCustomerId, stripeSubscriptionId }) {
     if (plan != null) await this.pool.query('UPDATE users SET plan=$2 WHERE id=$1', [id, plan]);
     if (stripeCustomerId != null) await this.pool.query('UPDATE users SET stripe_customer_id=$2 WHERE id=$1', [id, stripeCustomerId]);

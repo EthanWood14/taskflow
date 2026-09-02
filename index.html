@@ -2408,7 +2408,7 @@ function wireSidebar() {
     else if(a==='open-gantt') goRoadmap('gantt');
     else if(a==='share-project') openShareProject(id);
     else if(a==='braindump'){ ui.drawerOpen=false; openBraindump(); }
-    else if(a==='open-auth'){ ui.drawerOpen=false; openAuthModal('login'); }
+    else if(a==='open-auth'){ ui.drawerOpen=false; if(SYNC.site) showLockScreen(!SYNC.siteConfigured); else openAuthModal('login'); }
     else if(a==='account-menu'){ accountMenu(e.clientX, e.clientY); }
     else if(a==='toggle-theme'){ state.settings.theme=state.settings.theme==='dark'?'light':'dark'; applyTheme(); persist(); renderSidebar(); wireSidebar(); }
     else if(a==='collapse-sidebar'){ ui.sidebarCollapsed=true; ui.drawerOpen=false; render(); }
@@ -2465,7 +2465,7 @@ function wireMain() {
     else if(a==='bulk-add') openBulkAdd();
     else if(a==='weekly-review') openWeeklyReview();
     else if(a==='open-templates') openTemplatePicker();
-    else if(a==='open-auth') openAuthModal('login');
+    else if(a==='open-auth'){ if(SYNC.site) showLockScreen(!SYNC.siteConfigured); else openAuthModal('login'); }
     else if(a==='account-menu') accountMenu(e.clientX, e.clientY);
     else if(a==='dismiss-welcome'){ localStorage.setItem('tf.welcomeDismissed','1'); render(); }
   });
@@ -3378,7 +3378,13 @@ const SYNC = {
   async refreshBilling(){ if(!location.protocol.startsWith('http'))return; try { const d=await this.api('/api/billing/config'); this.billing=Object.assign(this.billing,d); } catch(e){} },
   async upgrade(){ const d=await this.api('/api/billing/checkout',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
   async portal(){ const d=await this.api('/api/billing/portal',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
-  logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); },
+  logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); if(this.site) showLockScreen(false); },
+  // Single-password mode (server default): one password, one workspace, no emails.
+  site:false, siteConfigured:false,
+  get isSite(){ return !!this.site; },
+  async unlock(password){ return this.api('/api/unlock',{method:'POST',body:JSON.stringify({password})}); },
+  async setupSite(password){ return this.api('/api/site/setup',{method:'POST',body:JSON.stringify({password})}); },
+  async pendingImports(){ try { const d=await this.api('/api/imports/pending'); return d.imports||[]; } catch(e){ return []; } },
   async refreshWorkspaces(){ try { const d=await this.api('/api/me'); this.workspaces=d.workspaces||[]; if(d.name){ this.name=d.name; localStorage.setItem('tf.name',d.name); } } catch(e){} },
   async resetPassword(email, recoveryCode, newPassword){ const d=await this.api('/api/reset-password',{method:'POST',body:JSON.stringify({email,recoveryCode,newPassword})}); this._auth(d); await this.enterWorkspace(); return d; },
   async regenRecovery(){ const d=await this.api('/api/account/recovery',{method:'POST',body:'{}'}); return d.recoveryCode; },
@@ -3436,6 +3442,18 @@ function updatePresenceUI() {
 }
 function syncBoxHtml() {
   if (location.protocol === 'file:') return `<div class="sync-note">Open the app from your Railway URL (https://…railway.app) to enable cloud sync. On <code>file://</code> it stays local-only.</div>`;
+  if (SYNC.site && SYNC.on) {
+    const dot = SYNC.status==='error'?'#ef4444':'#10b981';
+    return `<div class="sync-on">
+      <div class="acct-head"><span class="acct-av">🔒</span>
+        <div class="acct-id"><div class="acct-name">Password-protected <span class="sync-dot" style="background:${dot}" title="live sync ${SYNC.status==='error'?'error':'on'}"></span></div><div class="acct-email">One password, no accounts. Your tasks are saved on the server and sync to every device that has the password.</div></div></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+        <button class="btn ghost" id="acct-pass">🔑 Change password</button>
+        <button class="btn ghost" id="acct-token" title="Mint a personal API token for scripts and AI agents">🔌 API token</button>
+        <button class="btn ghost" id="sync-logout">🔒 Lock</button></div>
+      <div class="sync-note">Tip: install this page as an app on your phone (Share → Add to Home Screen) — it stays unlocked until you press Lock.</div>
+    </div>`;
+  }
   if (SYNC.on) {
     const dot = SYNC.status==='error'?'#ef4444':'#10b981';
     const wsOpts = (SYNC.workspaces||[]).map(w=>`<option value="${w.id}" ${w.id===SYNC.activeWs?'selected':''}>${esc(w.name)} (${w.members}👤)</option>`).join('');
@@ -3585,8 +3603,9 @@ function accountMenu(x, y) {
     {label:'Account & sync settings', icon:'⚙', fn:()=>openSettings()},
     {label: pro?'Manage billing':'Go Pro — free trial', icon:'💎', fn:()=> pro ? SYNC.portal().catch(e=>toast(e.message)) : openPricing()},
     'sep',
-    {label:'Sign out', icon:'🚪', danger:true, fn:()=>{ SYNC.logout(); toast('Signed out — your data stays on this device'); }},
-  ]);
+    SYNC.site ? {label:'Lock', icon:'🔒', fn:()=>{ SYNC.logout(); }}
+              : {label:'Sign out', icon:'🚪', danger:true, fn:()=>{ SYNC.logout(); toast('Signed out — your data stays on this device'); }},
+  ].filter(x=>!(SYNC.site && x && x.icon==='💎')));
 }
 
 // ---------- Pricing / upgrade ----------
@@ -3664,17 +3683,69 @@ async function renderMembersList() {
   }).join('') || '<div class="sync-note">No members.</div>';
   host.querySelectorAll('[data-removemem]').forEach(el=>el.onclick=async()=>{ if(confirm('Remove this member?')){ try{ await SYNC.removeMember(el.dataset.removemem); renderMembersList(); }catch(e){ toast('Failed: '+e.message); } } });
 }
-function initSync() {
+const SITE_EMAIL = 'site@local';
+async function initSync() {
+  // Password mode: the whole app sits behind one password (see /api/site). Detect it before anything else.
+  if (location.protocol.startsWith('http')) {
+    let site=null; try { site = await SYNC.api('/api/site'); } catch(e) {}
+    if (site && site.mode==='password') {
+      SYNC.site=true; SYNC.siteConfigured=!!site.configured;
+      if (!(SYNC.on && SYNC.email===SITE_EMAIL)) {
+        if (SYNC.on) { SYNC.site=false; SYNC.logout(); SYNC.site=true; }   // stale accounts-mode session: drop it, no lock loop
+        showLockScreen(!site.configured); return;
+      }
+    }
+  }
   // Only attempt when served from a backend origin (http/https), not file://
   if (SYNC.on && location.protocol.startsWith('http')) {
     SYNC.api('/api/health').then(async (h)=>{
       SYNC.ai = !!(h && h.ai);
-      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); handleImportParam(); }
+      try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); handleImportParam(); checkPendingImports(); }
       catch(e){ SYNC.status='off'; }
     }).catch(()=>{ SYNC.status='off'; });
   } else { handleJoinParam(); handleImportParam(); }
   handleBillingParam();
   handlePricingPath();
+}
+// ---- Lock screen (password mode) ----
+function showLockScreen(setupMode) {
+  let el = document.getElementById('lock-screen');
+  if (!el) { el = document.createElement('div'); el.id='lock-screen'; document.body.appendChild(el); }
+  el.setAttribute('style','position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px');
+  el.innerHTML = `<form id="lock-form" class="modal" style="max-width:380px;width:100%;padding:28px 26px;text-align:center">
+      <div style="font-size:40px;margin-bottom:6px">${setupMode?'🔐':'🔒'}</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:4px">${esc(state.settings.workspaceName||'TaskFlow')}</div>
+      <div class="sync-note" style="margin-bottom:16px">${setupMode?'First time here — choose a password. This one password protects everything; no email or username needed.':'Enter your password to open your tasks.'}</div>
+      <div class="field" style="text-align:left"><label>${setupMode?'New password (6+ characters)':'Password'}</label><input id="lock-pass" type="password" autocomplete="${setupMode?'new-password':'current-password'}" autofocus style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:16px"></div>
+      ${setupMode?`<div class="field" style="text-align:left"><label>Repeat password</label><input id="lock-pass2" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:16px"></div>`:''}
+      <div id="lock-err" style="color:#ef4444;min-height:18px;margin:6px 0"></div>
+      <button class="btn primary" id="lock-go" type="submit" style="width:100%;padding:11px">${setupMode?'Set password & open':'Unlock'}</button>
+    </form>`;
+  const form=$('#lock-form'); setTimeout(()=>{ const i=$('#lock-pass'); if(i) i.focus(); },50);
+  form.onsubmit = async (ev) => {
+    ev.preventDefault(); const err=$('#lock-err'); const btn=$('#lock-go'); const pw=$('#lock-pass').value;
+    if (setupMode && pw !== $('#lock-pass2').value) { err.textContent='Passwords don’t match'; return; }
+    if (pw.length < 6) { err.textContent='At least 6 characters'; return; }
+    btn.disabled=true; btn.textContent='Opening…'; err.textContent='';
+    try { const d = setupMode ? await SYNC.setupSite(pw) : await SYNC.unlock(pw); await afterUnlock(d); }
+    catch(e) { btn.disabled=false; btn.textContent=setupMode?'Set password & open':'Unlock'; err.textContent=e.message; if(e.status===409 && /Already set up/.test(e.message)) showLockScreen(false); else if(e.status===409 && /Not set up/.test(e.message)) showLockScreen(true); }
+  };
+}
+function hideLockScreen(){ const el=document.getElementById('lock-screen'); if(el) el.remove(); }
+async function afterUnlock(d) {
+  SYNC._auth(d); SYNC.siteConfigured=true;
+  try { const h=await SYNC.api('/api/health'); SYNC.ai=!!(h&&h.ai); } catch(e){}
+  try { await SYNC.refreshWorkspaces(); SYNC.status='on'; await SYNC.enterWorkspace(); } catch(e){ SYNC.status='error'; }
+  hideLockScreen(); render();
+  handleJoinParam(); handleImportParam(); checkPendingImports();
+}
+// Password mode: anything parked via /api/imports/stage is offered right after unlock — one click to apply.
+async function checkPendingImports() {
+  if (!SYNC.site || !SYNC.on) return;
+  if (/[?&]import=/.test(location.search)) return;
+  const list = await SYNC.pendingImports(); if (!list.length) return;
+  if (sessionStorage.getItem('tf.dismissedImport') === list[0].code) return;
+  showImportDialog(list[0].code);
 }
 function handleJoinParam() {
   const m = location.search.match(/[?&]join=([a-f0-9]+)/i); if(!m) return;
@@ -3686,7 +3757,10 @@ function handleJoinParam() {
 async function handleImportParam() {
   const m = location.search.match(/[?&]import=([a-f0-9]+)/i); if(!m) return;
   const code = m[1];
-  if (!SYNC.on) { toast('Sign in to apply this import'); if(!modalRoot.innerHTML) openAuthModal('login'); return; }
+  if (!SYNC.on) { if (SYNC.site) return; toast('Sign in to apply this import'); if(!modalRoot.innerHTML) openAuthModal('login'); return; }
+  showImportDialog(code);
+}
+async function showImportDialog(code) {
   let info; try { info = await SYNC.peekImport(code); } catch(e) { toast('Import link: '+e.message); history.replaceState(null,'',location.pathname); return; }
   const c = info.counts||{}; const wss = info.workspaces||SYNC.workspaces||[];
   const wsOpts = wss.map(w=>`<option value="${esc(w.id)}" ${w.id===SYNC.activeWs?'selected':''}>${esc(w.name)}</option>`).join('');
@@ -3700,7 +3774,7 @@ async function handleImportParam() {
       <div id="imp-err" style="color:#ef4444;margin-top:8px"></div>
     </div>
     <div class="modal-foot"><button class="btn ghost" id="imp-dismiss">Dismiss</button><span style="flex:1"></span><button class="btn primary" id="imp-go">Import now</button></div></div></div>`;
-  $('#imp-dismiss').onclick=()=>{ closeModal(); history.replaceState(null,'',location.pathname); };
+  $('#imp-dismiss').onclick=()=>{ closeModal(); history.replaceState(null,'',location.pathname); try{ sessionStorage.setItem('tf.dismissedImport', code); }catch(e){} };
   $('#imp-go').onclick=async()=>{
     const wsId=$('#imp-ws').value, replace=$('#imp-replace').checked; const btn=$('#imp-go'); btn.disabled=true; btn.textContent='Importing…';
     try {

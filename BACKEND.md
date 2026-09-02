@@ -10,6 +10,20 @@ The app ships with an optional **Node backend** (`server/`) that adds:
 
 It also serves the static app, so it's **one Railway service**. The app still works fully **offline/local-first** — sync is opt-in (Settings → ☁ Cloud sync).
 
+## 🔒 Password mode (default) vs accounts mode
+
+By default the whole app sits behind **one password** — no emails, usernames or sign-ups. The first visitor
+sets it (6+ characters); after that every device asks for it once and stays unlocked until you press
+**Lock**. Change it in ⚙ Settings → ☁ Cloud sync. Under the hood it is a single synthetic account with one
+workspace, so imports, API tokens and the one-click import links all work unchanged, and anything parked
+via `/api/imports/stage` is offered right after unlock.
+
+When password mode is first set up on a server that already had accounts, the fullest existing workspace is
+copied into the new one so nothing is lost.
+
+Set `SITE_MODE=accounts` in Railway to get the classic multi-user flow (signup/login, shared workspaces,
+invites, Stripe plans) described below.
+
 ## Storage: JSON (default) or Postgres
 - **No setup:** uses a JSON file on a Volume at `/data` — fine for personal use and small teams, supports full shared workspaces.
 - **Scale/durability:** add a Railway **Postgres** plugin. The server auto-detects `DATABASE_URL`, creates its tables on boot, and uses Postgres instead. No code changes.

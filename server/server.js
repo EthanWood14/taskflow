@@ -131,7 +131,51 @@ app.use((req, res, next) => { res.set('Access-Control-Allow-Origin', '*'); res.s
 
 app.use((req, _res, next) => { resolveAuth(req).then(u => { req.user = u; next(); }).catch(() => { req.user = null; next(); }); });
 
-app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, features: ['api-tokens', 'import', 'staged-imports'] }));
+app.get('/api/health', (_req, res) => res.json({ ok: true, mode: MODE, ai: !!process.env.ANTHROPIC_API_KEY, site: SITE_MODE, features: ['api-tokens', 'import', 'staged-imports', 'password-mode'] }));
+
+// ---------- Single-password mode (default) ----------
+// One password protects the whole app; no emails or usernames. Under the hood it is a single synthetic
+// account ("site") with one workspace, so every workspace/import/token endpoint works unchanged.
+// Set SITE_MODE=accounts to run the classic multi-user signup/login flow instead.
+const SITE_MODE = process.env.SITE_MODE === 'accounts' ? 'accounts' : 'password';
+const SITE_UID = 'u_site', SITE_EMAIL = 'site@local';
+const siteUser = () => store.getUserById(SITE_UID);
+const siteSession = async (u) => ({ token: sign(u), email: SITE_EMAIL, name: u.name || 'Me', plan: 'free', site: true, workspaces: await store.listWorkspaces(SITE_UID) });
+async function seedSiteWorkspace() {
+  // Carry over the fullest existing workspace (e.g. from the old accounts mode) so nothing is lost.
+  const mine = (await store.listWorkspaces(SITE_UID))[0]; if (!mine) return;
+  const cur = await store.getState(mine.id); if (cur && cur.state) return;
+  const all = (await store.listAllWorkspaces()).filter(w => w.ownerId !== SITE_UID && w.state && Array.isArray(w.state.tasks));
+  if (!all.length) return;
+  all.sort((a, b) => (b.state.tasks.length - a.state.tasks.length) || ((b.updatedAt || 0) - (a.updatedAt || 0)));
+  await store.putState(mine.id, all[0].state);
+  console.log('[site] seeded workspace from', all[0].id, `(${all[0].state.tasks.length} tasks)`);
+}
+app.get('/api/site', asyncH(async (_req, res) => { res.json({ mode: SITE_MODE, configured: SITE_MODE === 'password' ? !!(await siteUser()) : null }); }));
+app.post('/api/site/setup', authLimit, asyncH(async (req, res) => {
+  if (SITE_MODE !== 'password') return res.status(404).json({ error: 'Not in password mode' });
+  if (await siteUser()) return res.status(409).json({ error: 'Already set up — enter the password instead' });
+  const password = String(req.body.password || '');
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  const u = await store.createUser({ id: SITE_UID, email: SITE_EMAIL, hash: await bcrypt.hash(password, 10), name: 'Me', recoveryHash: null });
+  await seedSiteWorkspace();
+  console.log('[site] password set');
+  res.json(await siteSession(u));
+}));
+app.post('/api/unlock', authLimit, asyncH(async (req, res) => {
+  if (SITE_MODE !== 'password') return res.status(404).json({ error: 'Not in password mode' });
+  const u = await siteUser(); if (!u) return res.status(409).json({ error: 'Not set up yet', setup: true });
+  if (!(await bcrypt.compare(String(req.body.password || ''), u.hash))) return res.status(401).json({ error: 'Wrong password' });
+  res.json(await siteSession(u));
+}));
+// Password mode: what's parked and waiting (so the app can offer it right after unlock)
+app.get('/api/imports/pending', asyncH(async (req, res) => {
+  const u = auth(req); if (!u) return res.status(401).json({ error: 'Not authenticated' });
+  if (u.uid !== SITE_UID) return res.json({ imports: [] });
+  const now = Date.now();
+  const list = (await store.listStagedImports()).filter(r => now - (r.createdAt || 0) <= 48 * 60 * 60 * 1000).sort((a, b) => b.createdAt - a.createdAt);
+  res.json({ imports: list });
+}));
 
 // ---------- Personal API token (for scripts / agents importing on your behalf) ----------
 app.post('/api/account/api-token', asyncH(async (req, res) => {
@@ -148,6 +192,7 @@ app.post('/api/account/api-token/revoke', asyncH(async (req, res) => {
 }));
 
 app.post('/api/signup', authLimit, asyncH(async (req, res) => {
+  if (SITE_MODE === 'password') return res.status(404).json({ error: 'This TaskFlow is password-protected — sign-ups are off' });
   const email = norm(req.body.email), password = String(req.body.password || ''), name = String(req.body.name || '').trim().slice(0, 60);
   if (!validEmail(email)) return res.status(400).json({ error: 'Invalid email' });
   if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
