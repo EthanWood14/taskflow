@@ -150,15 +150,30 @@ const SITE_MODE = process.env.SITE_MODE === 'accounts' ? 'accounts' : 'password'
 const SITE_UID = 'u_site', SITE_EMAIL = 'site@local';
 const siteUser = () => store.getUserById(SITE_UID);
 const siteSession = async (u) => ({ token: sign(u), email: SITE_EMAIL, name: u.name || 'Me', plan: 'free', site: true, workspaces: await store.listWorkspaces(SITE_UID) });
+// Fill an empty site workspace: first from any other workspace on this server, otherwise from the
+// bundled seed-import.json. The bundle matters because without a mounted Volume the JSON store is
+// wiped on every redeploy — the seed makes the app come back with real data instead of samples.
 async function seedSiteWorkspace() {
-  // Carry over the fullest existing workspace (e.g. from the old accounts mode) so nothing is lost.
   const mine = (await store.listWorkspaces(SITE_UID))[0]; if (!mine) return;
-  const cur = await store.getState(mine.id); if (cur && cur.state) return;
-  const all = (await store.listAllWorkspaces()).filter(w => w.ownerId !== SITE_UID && w.state && Array.isArray(w.state.tasks));
-  if (!all.length) return;
-  all.sort((a, b) => (b.state.tasks.length - a.state.tasks.length) || ((b.updatedAt || 0) - (a.updatedAt || 0)));
-  await store.putState(mine.id, all[0].state);
-  console.log('[site] seeded workspace from', all[0].id, `(${all[0].state.tasks.length} tasks)`);
+  const cur = await store.getState(mine.id);
+  if (cur && cur.state && Array.isArray(cur.state.tasks) && cur.state.tasks.length) return;
+
+  const all = (await store.listAllWorkspaces()).filter(w => w.ownerId !== SITE_UID && w.state && Array.isArray(w.state.tasks) && w.state.tasks.length);
+  if (all.length) {
+    all.sort((a, b) => (b.state.tasks.length - a.state.tasks.length) || ((b.updatedAt || 0) - (a.updatedAt || 0)));
+    await store.putState(mine.id, all[0].state);
+    console.log('[site] seeded workspace from', all[0].id, `(${all[0].state.tasks.length} tasks)`);
+    return;
+  }
+  try {
+    const p = path.join(__dirname, 'seed-import.json');
+    if (!fs.existsSync(p)) return;
+    const seed = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const r = applyImport(cur ? cur.state : null, seed, { replace: true });
+    if (!r.ok) return console.warn('[site] seed import failed:', r.msg);
+    await store.putState(mine.id, r.state);
+    console.log('[site] seeded workspace from bundled seed-import.json —', r.msg);
+  } catch (e) { console.warn('[site] seed import error:', e.message); }
 }
 app.get('/api/site', asyncH(async (_req, res) => { res.json({ mode: SITE_MODE, configured: SITE_MODE === 'password' ? !!(await siteUser()) : null }); }));
 app.post('/api/site/setup', authLimit, asyncH(async (req, res) => {
@@ -175,6 +190,7 @@ app.post('/api/unlock', authLimit, asyncH(async (req, res) => {
   if (SITE_MODE !== 'password') return res.status(404).json({ error: 'Not in password mode' });
   const u = await siteUser(); if (!u) return res.status(409).json({ error: 'Not set up yet', setup: true });
   if (!(await bcrypt.compare(String(req.body.password || ''), u.hash))) return res.status(401).json({ error: 'Wrong password' });
+  await seedSiteWorkspace();   // no-op unless the workspace is empty (e.g. after a data reset)
   res.json(await siteSession(u));
 }));
 // Password mode: what's parked and waiting (so the app can offer it right after unlock)

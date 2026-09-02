@@ -8,6 +8,8 @@ RUN npm install --omit=dev
 
 # Server code
 COPY server/server.js server/storage.js server/importer.js ./
+# Bundled first-run data (applied only when the site workspace is empty)
+COPY server/seed-import.json ./
 
 # Static app, served from /app/public
 COPY index.html manifest.webmanifest sw.js ./public/

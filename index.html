@@ -3380,7 +3380,7 @@ const SYNC = {
   async portal(){ const d=await this.api('/api/billing/portal',{method:'POST',body:'{}'}); if(d&&d.url) location.href=d.url; },
   logout() { this.token=null; this.email=null; this.name=null; this.workspaces=[]; this.activeWs=null; ['tf.token','tf.email','tf.name','tf.ws'].forEach(k=>localStorage.removeItem(k)); if(this.ws){ try{this.ws.close();}catch(e){} this.ws=null; } this.status='off'; render(); if(this.site) showSiteLock(false); },
   // Single-password mode (server default): one password, one workspace, no emails.
-  site:false, siteConfigured:false,
+  site:false, siteConfigured:false, persistent:null,
   get isSite(){ return !!this.site; },
   async unlock(password){ return this.api('/api/unlock',{method:'POST',body:JSON.stringify({password})}); },
   async setupSite(password){ return this.api('/api/site/setup',{method:'POST',body:JSON.stringify({password})}); },
@@ -3451,6 +3451,7 @@ function syncBoxHtml() {
         <button class="btn ghost" id="acct-pass">🔑 Change password</button>
         <button class="btn ghost" id="acct-token" title="Mint a personal API token for scripts and AI agents">🔌 API token</button>
         <button class="btn ghost" id="sync-logout">🔒 Lock</button></div>
+      ${SYNC.persistent===false?`<div class="sync-note" style="border:1px solid #ef4444;border-radius:8px;padding:8px;margin-bottom:8px"><b>⚠ This server has no attached disk.</b> Everything here — your password and your tasks — is erased whenever the app redeploys. Fix it in Railway: your service → <b>Settings → Volumes → New Volume</b>, mount path <code>/data</code>. Until then, export a backup from Import / Export.</div>`:''}
       <div class="sync-note">Tip: install this page as an app on your phone (Share → Add to Home Screen) — it stays unlocked until you press Lock.</div>
     </div>`;
   }
@@ -3699,7 +3700,7 @@ async function initSync() {
   // Only attempt when served from a backend origin (http/https), not file://
   if (SYNC.on && location.protocol.startsWith('http')) {
     SYNC.api('/api/health').then(async (h)=>{
-      SYNC.ai = !!(h && h.ai);
+      SYNC.ai = !!(h && h.ai); SYNC.persistent = h ? h.persistent : null;
       try { await SYNC.refreshWorkspaces(); SYNC.status='on'; SYNC.refreshBilling(); await SYNC.enterWorkspace(); handleJoinParam(); handleImportParam(); checkPendingImports(); }
       catch(e){ SYNC.status='off'; }
     }).catch(()=>{ SYNC.status='off'; });
@@ -3734,7 +3735,7 @@ function showSiteLock(setupMode) {
 function hideSiteLock(){ const el=document.getElementById('site-lock'); if(el) el.remove(); }
 async function afterUnlock(d) {
   SYNC._auth(d); SYNC.siteConfigured=true;
-  try { const h=await SYNC.api('/api/health'); SYNC.ai=!!(h&&h.ai); } catch(e){}
+  try { const h=await SYNC.api('/api/health'); SYNC.ai=!!(h&&h.ai); SYNC.persistent=h?h.persistent:null; } catch(e){}
   try { await SYNC.refreshWorkspaces(); SYNC.status='on'; await SYNC.enterWorkspace(); } catch(e){ SYNC.status='error'; }
   hideSiteLock(); render();
   handleJoinParam(); handleImportParam(); checkPendingImports();
